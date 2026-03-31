@@ -150,6 +150,8 @@ Once your Docker Compose is up and the TimescaleDB container is running:
 ```bash
 # Connect to the database and run the schema
 docker compose exec db psql -U gept -d gept -f /docker-entrypoint-initdb.d/schema.sql
+#this works with docker-compose.yml
+Get-Content packages/collector/db/schema.sql | docker exec -i timescaledb psql -U postgres
 ```
 
 Or you can mount the schema file to `/docker-entrypoint-initdb.d/` in your `docker-compose.yml` — PostgreSQL automatically runs any `.sql` files in that directory on first startup.
