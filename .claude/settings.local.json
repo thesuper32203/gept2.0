@@ -1,0 +1,20 @@
+{
+  "enabledPlugins": {
+    "context-mode@context-mode": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "A file was just edited. Here is the tool input: $ARGUMENTS\n\nIf the file is a Python file (.py), review it for: PEP8 compliance, code duplication, inefficiencies, missing type hints on function signatures, overly complex functions that should be split, and scalability concerns. Fix any issues you find by editing the file directly. If the file is not a Python file, do nothing.",
+            "statusMessage": "Checking code quality...",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
