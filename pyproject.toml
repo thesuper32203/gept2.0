@@ -1,0 +1,2 @@
+[tool.poetry.dependencies]
+psycopg2-binary = "^2.9"   # PostgreSQL driver (use psycopg2-binary for easy install)
