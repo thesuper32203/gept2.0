@@ -14,9 +14,9 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT_DIR / ".env.local")
 
 
-class DatabaseConnection -> None:
+class DatabaseConnection:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.DB_HOST = os.getenv('DB_HOST')
         self.DB_PORT = os.getenv('DB_PORT')
         self.DB_NAME = os.getenv('DB_NAME')
