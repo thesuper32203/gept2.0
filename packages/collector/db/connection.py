@@ -103,4 +103,11 @@ class DatabaseConnection:
             return cursor.rowcount
 
 
+    def execute_query(self, query: str, params: tuple | None = None) -> list[tuple]:
+        with self.get_cursor() as cursor:
+            cursor.execute(query,params)
+            return cursor.fetchall()
 
+    def close(self) -> None:
+
+        self.pool.closeall()
