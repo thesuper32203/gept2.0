@@ -69,5 +69,38 @@ class DatabaseConnection:
             execute_values(cursor, query, values, page_size=1000)
             return cursor.rowcount
 
-print(ROOT_DIR)
-print(os.getenv("DB_NAME"))
+    def upsert(
+            self,
+            table: str,
+            columns: list[str],
+            values: list[tuple],
+            conflict_columns: list[str]
+    ) -> int:
+
+        if not values:
+            return 0
+        column_identifier = [sql.Identifier(col) for col in columns]
+        conflict_identifier = [sql.Identifier(col) for col in conflict_columns]
+
+        update_columns = [col for col in columns if col not in conflict_columns]
+        update_assignments = [
+            sql.SQL("{col} = EXCLUDED.{col}").format(col=sql.Identifier(col))
+            for col in update_columns
+        ]
+
+        query = sql.SQL(
+            "INSERT INTO {table} ({columns}) VALUES %s "
+            "ON CONFLICT ({conflict_columns}) DO UPDATE SET {updates}"
+        ).format(
+            table=sql.Identifier(table),
+            columns=sql.SQL(",").join(column_identifier),
+            conflict_cols=sql.SQL(",").join(conflict_identifier),
+            updates=sql.SQL(",").join(update_assignments),
+        )
+
+        with self.get_cursor() as cursor:
+            execute_values(cursor, query, values, page_size=1000)
+            return cursor.rowcount
+
+
+
