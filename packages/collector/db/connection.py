@@ -2,11 +2,15 @@ import os
 from dotenv import load_dotenv
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 
 import psycopg2
 import psycopg2.pool as pool
 import psycopg2.extras
-from pathlib import Path
+from psycopg2.extras import execute_values
+from psycopg2 import sql
+
+
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
@@ -50,6 +54,20 @@ class DatabaseConnection:
             self.pool.putconn(conn)
 
 
+    def bulk_insert(self, table: str, columns: list[str], values: list[tuple]) -> int:
+
+        if not values:
+            return 0
+
+        columns_identifiers = [sql.Identifier(col) for col in columns]
+        query = sql.SQL("INSERT INTO {table} ({fields}) VALUES %s").format(
+            table=sql.Identifier(table),
+            fields=sql.SQL(",").join(columns_identifiers),
+        )
+
+        with self.get_cursor() as cursor:
+            execute_values(cursor, query, values, page_size=1000)
+            return cursor.rowcount
 
 print(ROOT_DIR)
 print(os.getenv("DB_NAME"))
