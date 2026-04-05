@@ -68,15 +68,53 @@ class PriceCollector5Min:
         self.logger.info(f"Parsed {len(rows)} items for timestamp {snapshot_time}")
         return (snapshot_time, rows)
 
+    def save_prices(self, rows: list[tuple]) -> int:
+
+        columns = ["time", "item_id", "avg_high_price", "avg_low_price", "high_volume", "low_volume"]
+        count = self.db.bulk_insert(table="prices_5min", columns=columns, values=rows)
+        self.logger.info(f"Successfully inserted {count} items")
+        return count
+
+    def is_duplicate(self, snapshot_time: datetime) -> bool:
+
+        result = self.db.execute_query(
+            "SELECT 1 FROM prices_5min WHERE time = %s LIMIT 1",
+            (snapshot_time,)
+        )
+        return len(result) > 0
+
+    def run(self):
+
+        try:
+            self.logger.info(f"Starting run")
+            api_response = self.fetch_prices()
+            snapshot_time, rows = self.parse_prices(api_response)
+            if self.is_duplicate(snapshot_time):
+                self.logger.info(f"Data for {snapshot_time} alreadty exists, skipping")
+                return
+
+            count = self.save_prices(rows)
+            self.last_success_time = datetime.now(timezone.utc)
+            self.db.upsert(
+                table="prices_5m",
+                columns=["collector_name", "last_success", "failure_count"],
+                values=[("items", datetime.now(timezone.utc), 0)],
+                conflict_columns=["collector_name"]
+            )
+            self.logger.info(f"Successfully saved {count} items")
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Exception while fetching {snapshot_time}: {e}")
+
+    def run_loop(self) -> None:
+
+        self.logger.info(f"Starting 5-minute price collector loop")
+        while True:
+            start = time.time()
+            self.run()
+            elapsed = time.time() - start
+            sleep_time = max(0, int(COLLECTION_INTERVAL - elapsed))
+            self.logger.info(f"Sleeping for {sleep_time} seconds")
+            time.sleep(sleep_time)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    db = DatabaseConnection()
-    print("connected to db")
-    conn = PriceCollector5Min(db)
-    print("Connected to endpoints")
-    items = conn.fetch_prices()
-    print("Fetched prices")
-    print(items)
-    parsed = conn.parse_prices(items)
-    print(parsed)
+
