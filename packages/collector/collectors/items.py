@@ -20,4 +20,17 @@ class ItemCollector:
         self.session.headers.update({"User-Agent": USER_AGENT})
         self.logger = logging.getLogger(__name__)
 
-    def fetch_item(selfself):
+    def fetch_item(self) -> list[dict]:
+
+        print("running fetch items")
+        response = self.session.get(MAPPING_ENDPOINT, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        self.logger.info(f"Fetched {len(data)} items from mapping API")
+        return data
+
+database = DatabaseConnection()
+item = ItemCollector(database)
+if __name__ == "__main__":
+    itemMapping = item.fetch_item()
+    print(itemMapping)
