@@ -1,5 +1,7 @@
 import logging
+import sys
 from datetime import datetime, timezone
+from typing import Any
 
 import requests
 
@@ -20,13 +22,17 @@ class ItemCollector:
         self.session.headers.update({"User-Agent": USER_AGENT})
         self.logger = logging.getLogger(__name__)
 
-    def fetch_item(self) -> list[dict]:
+    def fetch_item(self) -> Any | None:
 
-        print("running fetch items")
-        response = self.session.get(MAPPING_ENDPOINT, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        data = response.json()
-        self.logger.info(f"Fetched {len(data)} items from mapping API")
+        try:
+            response = self.session.get(MAPPING_ENDPOINT, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+            self.logger.info(f"Fetched {len(data)} items from mapping API")
+        except requests.RequestException as e:
+            self.logger.exception("Failed to fetch items from mapping API %s", e)
+            return None
+
         return data
 
 database = DatabaseConnection()
