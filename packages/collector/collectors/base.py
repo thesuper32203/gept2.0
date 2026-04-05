@@ -91,18 +91,19 @@ class BaseCollector:
             self.last_success_time = datetime.now(timezone.utc)
 
             self.db.upsert(
-                table=self.table,
+                table="collection_status",
                 columns=["collector_name", "last_success", "failure_count"],
-                values=[("items", datetime.now(timezone.utc), 0)],
+                values=[(self.collector_name, self.last_success_time, 0)],
                 conflict_columns=["collector_name"]
             )
+
             self.logger.info(f"Successfully saved {count} items")
         except Exception as e:
             logging.error(e)
 
     def run_loop(self):
 
-        self.logger.info(f"Starting {self.table} price collector loop")
+        self.logger.info(f"Starting {self.collector_name} price collector loop")
         while True:
             start = time.time()
             self.run()
