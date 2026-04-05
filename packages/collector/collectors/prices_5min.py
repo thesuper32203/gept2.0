@@ -96,7 +96,7 @@ class PriceCollector5Min:
             count = self.save_prices(rows)
             self.last_success_time = datetime.now(timezone.utc)
             self.db.upsert(
-                table="prices_5m",
+                table="prices_5min",
                 columns=["collector_name", "last_success", "failure_count"],
                 values=[("items", datetime.now(timezone.utc), 0)],
                 conflict_columns=["collector_name"]
@@ -116,5 +116,8 @@ class PriceCollector5Min:
             self.logger.info(f"Sleeping for {sleep_time} seconds")
             time.sleep(sleep_time)
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
+    db = DatabaseConnection()
+    price_5m = PriceCollector5Min(db)
+    price_5m.run()
