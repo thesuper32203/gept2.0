@@ -63,11 +63,28 @@ class ItemCollector:
         self.logger.info(f"Saved {len(parsed_items)} items from mapping API\nUpserted {count}")
         return count
 
+    def run(self) -> None:
+        try:
+            self.logger.info("Starting item metadata collection")
+            raw_items = self.fetch_item()
+            parsed_items = self.parse_item(raw_items)
+            count = self.save_item(parsed_items)
+            self.db.upsert(
+                table="collection_status",
+                columns=["collector_name", "last_success", "failure_count"],
+                values=[("items", datetime.now(timezone.utc), 0)],
+                conflict_columns=["collector_name"]
+            )
 
-database = DatabaseConnection()
-item = ItemCollector(database)
-if __name__ == "__main__":
-    itemMapping = item.fetch_item()
-    cleaned = item.parse_item(itemMapping)
-    count = item.save_item(cleaned)
-    print(f"Saved {count} items from mapping API")
+        except Exception as e:
+            self.logger.exception("Failed to collect items from mapping API")
+            self.db.execute_query(
+                """
+                INSERT INTO collection_status (collector_name, last_success, failure_count)
+                VALUES (%s,NOW(), 1)
+                ON CONFLICT (collector_name)
+                    DO UPDATE SET failure_count = collection_status.failure_count + 1
+                """,
+                ("items",)
+            )
+

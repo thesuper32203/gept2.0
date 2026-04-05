@@ -105,10 +105,13 @@ class DatabaseConnection:
             return cursor.rowcount
 
 
-    def execute_query(self, query: str, params: tuple | None = None) -> list[tuple]:
+    def execute_query(self, query: str, params: tuple | None = None) -> list[tuple] | None:
         with self.get_cursor() as cursor:
-            cursor.execute(query,params)
-            return cursor.fetchall()
+            cursor.execute(query, params)
+            try:
+                return cursor.fetchall()
+            except psycopg2.ProgrammingError:
+                return None
 
     def close(self) -> None:
 
