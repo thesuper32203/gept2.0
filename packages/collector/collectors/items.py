@@ -35,8 +35,27 @@ class ItemCollector:
 
         return data
 
+    def parse_item(self, items: list[dict]) -> list[tuple] | None:
+        cleaned_items = []
+        now = datetime.now(timezone.utc)
+        for item in items:
+            id = item.get("id")
+            name = item.get("name", "unknown")
+            members = item.get("members")
+            limit = item.get("limit")
+            highalch = item.get("highalch")
+            lowalch = item.get("lowalch")
+            value = item.get("value")
+            examine = item.get("examine")
+            icon = item.get("icon")
+            clean_item = (id, name, members, limit, highalch, lowalch, value, examine, icon, now)
+            cleaned_items.append(clean_item)
+        return cleaned_items
+
+
 database = DatabaseConnection()
 item = ItemCollector(database)
 if __name__ == "__main__":
     itemMapping = item.fetch_item()
-    print(itemMapping)
+    cleaned = item.parse_item(itemMapping)
+    print(cleaned)
