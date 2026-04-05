@@ -36,8 +36,10 @@ class ItemCollector:
         return data
 
     def parse_item(self, items: list[dict]) -> list[tuple] | None:
+
         cleaned_items = []
         now = datetime.now(timezone.utc)
+
         for item in items:
             id = item.get("id")
             name = item.get("name", "unknown")
@@ -52,10 +54,20 @@ class ItemCollector:
             cleaned_items.append(clean_item)
         return cleaned_items
 
+    def save_item(self, parsed_items: list[tuple]) -> int:
+
+        columns = ["item_id", "name", "members", "buy_limit",
+                   "high_alch", "low_alch", "value", "examine",
+                   "icon", "last_updated"]
+        count = self.db.upsert(table="items", columns=columns, values=parsed_items,conflict_columns=["item_id"])
+        self.logger.info(f"Saved {len(parsed_items)} items from mapping API\nUpserted {count}")
+        return count
+
 
 database = DatabaseConnection()
 item = ItemCollector(database)
 if __name__ == "__main__":
     itemMapping = item.fetch_item()
     cleaned = item.parse_item(itemMapping)
-    print(cleaned)
+    count = item.save_item(cleaned)
+    print(f"Saved {count} items from mapping API")

@@ -88,13 +88,15 @@ class DatabaseConnection:
             for col in update_columns
         ]
 
-        query = sql.SQL(
-            "INSERT INTO {table} ({columns}) VALUES %s "
-            "ON CONFLICT ({conflict_columns}) DO UPDATE SET {updates}"
-        ).format(
+        query = sql.SQL("""
+            INSERT INTO {table} ({columns}) 
+            VALUES %s
+            ON CONFLICT ({conflict_columns}) 
+            DO UPDATE SET {updates}
+        """).format(
             table=sql.Identifier(table),
             columns=sql.SQL(",").join(column_identifier),
-            conflict_cols=sql.SQL(",").join(conflict_identifier),
+            conflict_columns=sql.SQL(",").join(conflict_identifier),
             updates=sql.SQL(",").join(update_assignments),
         )
 
