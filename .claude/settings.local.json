@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "mcp__plugin_context-mode_context-mode__ctx_execute"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -9,6 +17,12 @@
             "prompt": "A file was just edited. Here is the tool input: $ARGUMENTS\n\nIf the file is a Python file (.py), review it for: PEP8 compliance, code duplication, inefficiencies, missing type hints on function signatures, overly complex functions that should be split, and scalability concerns. Fix any issues you find by editing the file directly. If the file is not a Python file, do nothing.",
             "timeout": 60,
             "statusMessage": "Checking code quality..."
+          },
+          {
+            "type": "command",
+            "command": "powershell -Command \"$ErrorActionPreference = 'Stop'; $json = [Console]::In.ReadToEnd() | ConvertFrom-Json; $file = $json.tool_input.file_path // $json.tool_response.filePath; if (-not $file) { exit 0 }; cd 'C:\\Users\\Thesu\\VSCode projects\\gept2.0'; if ((git status --porcelain $file | Measure-Object).Count -eq 0) { exit 0 }; $branch = (git rev-parse --abbrev-ref HEAD); if ($branch -eq 'main') { git checkout -b feature/$(Get-Date -Format 'yyyyMMdd-HHmmss'); $newBranch = (git rev-parse --abbrev-ref HEAD); Write-Host \\\"Created branch: $newBranch\\\"; } else { Write-Host \\\"On branch: $branch\\\"; }; git add $file; $status = git diff --cached --name-only; if ($status) { $msg = \\\"chore: auto-format and update $file\\\"; git commit -m $msg; Write-Host \\\"Committed: $msg\\\"; if (Get-Command gh -ErrorAction SilentlyContinue) { git push -u origin $branch 2>$null; gh pr create --title \\\"$msg\\\" --body \\\"Auto-generated PR from code changes.\\\" --head $branch --base main 2>$null | Write-Host; } else { Write-Host \\\"gh CLI not found - commit created locally\\\"; }; }\"",
+            "timeout": 30,
+            "statusMessage": "Creating pull request..."
           }
         ]
       }
@@ -16,10 +30,5 @@
   },
   "enabledPlugins": {
     "context-mode@context-mode": true
-  },
-  "permissions": {
-    "allow": [
-      "mcp__plugin_context-mode_context-mode__ctx_batch_execute"
-    ]
   }
 }
