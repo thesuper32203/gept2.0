@@ -1,9 +1,4 @@
 import logging                                  # Log collection events
-import time                                     # Track timing, calculate sleep
-from datetime import datetime, timezone         # Convert Unix timestamps to Python datetimes
-from typing import Any
-
-import requests                                 # HTTP calls to the API
 
 from packages.collector.collectors.base import BaseCollector
 from packages.collector.db.connection import DatabaseConnection
@@ -17,7 +12,6 @@ MAX_RETRIES: int = 3                            # How many times to retry a fail
 INITIAL_BACKOFF: float = 5.0                    # Seconds to wait before first retry
 TABLE = "prices_5min"
 COLLECTOR_NAME = "5min collector"
-db = DatabaseConnection()
 
 class PriceCollector5Min(BaseCollector):
     def __init__(self, db:DatabaseConnection):
@@ -33,6 +27,7 @@ class PriceCollector5Min(BaseCollector):
 
 
 if __name__ == "__main__":
+    db = DatabaseConnection()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"

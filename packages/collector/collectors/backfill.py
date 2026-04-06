@@ -29,19 +29,15 @@ class BackfillService:
 
         return [row[0] for row in rows]
 
-    def get_already_backfilled(self, table:str) ->set[int]:
+    def get_earliest_timestamp(self, table:str) -> int | None:
 
-        rows = self.db.execute_query(
-            "SELECT DISTINCT item_id FROM {table} ORDER BY item_id ASC".format(table=table)
-        )
-        return set(row[0] for row in rows)
+        oldest_timestamp = self.db.execute_query(f"SELECT MIN(EXTRACT(EPOCH FROM time)) FROM {table}")
+        return int(oldest_timestamp[0][0]) if oldest_timestamp else None
 
-    def fetch_timeseries(self, table:str, timestamp:str) -> list[dict]:
 
-        return list({})
 
 if __name__ == "__main__":
     db = DatabaseConnection()
     backfill = BackfillService(db)
-    print(backfill.get_item_ids())
-    print(backfill.get_already_backfilled("prices_5min"))
+    val = backfill.get_earliest_timestamp("prices_1hr")
+    print(val)

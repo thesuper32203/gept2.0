@@ -31,21 +31,19 @@ class BaseCollector:
             params["timestamp"] = timestamp
         try:
             self.logger.info(f"Fetching prices in {self.collector_name}")
-            for attempts in range(self.max_retries):
-                response = self.session.get(self.endpoint, params=params)
-                response.raise_for_status()
-                data = response.json()
-                return data
+            response = self.session.get(self.endpoint, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return data
         except Exception as e:
             self.logger.error(f"Error in fetch prices {self.collector_name} - {e}")
             return {}
 
     def parse_prices(self, api_response: dict) -> (datetime, list[tuple]):
-
-        unix_ts = api_response["timestamp"]
-        snapshot_time = datetime.fromtimestamp(unix_ts, tz=timezone.utc)
         try:
             self.logger.info(f"Parsing prices in {self.collector_name}")
+            unix_ts = api_response["timestamp"]
+            snapshot_time = datetime.fromtimestamp(unix_ts, tz=timezone.utc)
             data = api_response["data"]
             rows = []
             for item_id_str, price_data in data.items():
@@ -63,7 +61,7 @@ class BaseCollector:
             return (snapshot_time, rows)
         except Exception as e:
             self.logger.error(f"Error in parse prices {self.collector_name} - {e}")
-            return {}
+            return (None, [])
 
     def save_prices(self, rows:list[tuple]) -> int:
 
@@ -82,6 +80,9 @@ class BaseCollector:
             f"SELECT 1 FROM {self.table} WHERE time = %s LIMIT 1",
             (snapshot_time,)
         )
+        if result is None:
+            return False
+
         return len(result) > 0
 
     def run(self):
@@ -108,6 +109,15 @@ class BaseCollector:
             self.logger.info(f"Successfully saved {count} items")
         except Exception as e:
             self.logger.error(e)
+            self.db.execute_query(
+                """
+                INSERT INTO collection_status (collector_name, last_success, failure_count)
+                VALUES (%s, NOW(), 1)
+                ON CONFLICT (collector_name)
+                    DO UPDATE SET failure_count = collection_status.failure_count + 1
+                """,
+                (self.collector_name,)
+            )
 
     def run_loop(self):
 

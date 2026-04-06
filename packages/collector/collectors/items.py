@@ -41,7 +41,7 @@ class ItemCollector:
         now = datetime.now(timezone.utc)
 
         for item in items:
-            id = item.get("id")
+            item_id = item.get("id")
             name = item.get("name", "unknown")
             members = item.get("members")
             limit = item.get("limit")
@@ -50,7 +50,7 @@ class ItemCollector:
             value = item.get("value")
             examine = item.get("examine")
             icon = item.get("icon")
-            clean_item = (id, name, members, limit, highalch, lowalch, value, examine, icon, now)
+            clean_item = (item_id, name, members, limit, highalch, lowalch, value, examine, icon, now)
             cleaned_items.append(clean_item)
         return cleaned_items
 

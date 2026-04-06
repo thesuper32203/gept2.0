@@ -1,8 +1,4 @@
 import logging
-import time
-from datetime import datetime, timezone
-
-import requests
 
 from packages.collector.collectors.base import BaseCollector
 from packages.collector.db.connection import DatabaseConnection
