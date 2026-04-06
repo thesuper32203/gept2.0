@@ -18,7 +18,6 @@ INITIAL_BACKOFF: float = 5.0                    # Seconds to wait before first r
 TABLE = "prices_5min"
 COLLECTOR_NAME = "5min collector"
 class PriceCollector5Min(BaseCollector):
-
     def __init__(self, db:DatabaseConnection):
         super().__init__(
             db=db,
@@ -33,7 +32,12 @@ class PriceCollector5Min(BaseCollector):
 
 
 db = DatabaseConnection()
+
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
 
     price_5m = PriceCollector5Min(db=db)
     price_5m.run_loop()

@@ -16,6 +16,7 @@ MAX_RETRIES: int = 3
 INITIAL_BACKOFF: float = 10.0                    # Slightly longer initial backoff — less urgency
 TABLE = "prices_1hr"
 COLLECTOR_NAME = "1hr collector"
+
 class PriceCollector1hr(BaseCollector):
     def __init__(self, db:DatabaseConnection):
         super().__init__(
@@ -29,6 +30,11 @@ class PriceCollector1hr(BaseCollector):
         )
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
+
     db = DatabaseConnection()
     collector = PriceCollector1hr(db)
     collector.run_loop()
