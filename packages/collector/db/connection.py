@@ -114,5 +114,4 @@ class DatabaseConnection:
                 return None
 
     def close(self) -> None:
-
         self.pool.closeall()

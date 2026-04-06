@@ -17,6 +17,8 @@ MAX_RETRIES: int = 3                            # How many times to retry a fail
 INITIAL_BACKOFF: float = 5.0                    # Seconds to wait before first retry
 TABLE = "prices_5min"
 COLLECTOR_NAME = "5min collector"
+db = DatabaseConnection()
+
 class PriceCollector5Min(BaseCollector):
     def __init__(self, db:DatabaseConnection):
         super().__init__(
@@ -29,9 +31,6 @@ class PriceCollector5Min(BaseCollector):
             initial_backoff=INITIAL_BACKOFF
         )
 
-
-
-db = DatabaseConnection()
 
 if __name__ == "__main__":
     logging.basicConfig(
