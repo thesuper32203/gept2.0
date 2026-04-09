@@ -8,6 +8,7 @@ authors = ["Your Name"]
 python = "^3.12"
 psycopg2-binary = "^2.9"     # PostgreSQL driver
 requests = "^2.31"            # HTTP client for Wiki API
+python-dotenv = "^1.0"        # Load .env.local config
 
 [build-system]
 requires = ["poetry-core"]

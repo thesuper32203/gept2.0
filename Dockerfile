@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/li
 
 # Copy and install Python dependencies
 COPY pyproject.toml poetry.lock* ./
-RUN pip install poetry && poetry config virtualenvs.create false && poetry install --only main
+RUN pip install poetry && poetry config virtualenvs.create false && poetry install --only main --no-root
 
 # Copy source code
 COPY packages/collector ./packages/collector
