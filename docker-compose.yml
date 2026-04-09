@@ -1,0 +1,38 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: gept-db
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data                             # Persist data between restarts
+      - ./packages/collector/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql  # Auto-run schema on first start
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  collectors:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gept-collector
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db                        # "db" = the service name above. Docker networking resolves this.
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      USER_AGENT: ${USER_AGENT}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
