@@ -1,4 +1,14 @@
-[tool.poetry.dependencies]
-psycopg2-binary = "^2.9"   # PostgreSQL driver (use psycopg2-binary for easy install)
-requests = "^2.31"     # HTTP client
+[tool.poetry]
+name = "gept2"
+version = "0.1.0"
+description = "OSRS Grand Exchange flipping tool with AI price prediction"
+authors = ["Your Name"]
 
+[tool.poetry.dependencies]
+python = "^3.12"
+psycopg2-binary = "^2.9"     # PostgreSQL driver
+requests = "^2.31"            # HTTP client for Wiki API
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
