@@ -15,3 +15,38 @@ Track every significant structural change, new feature, or architectural decisio
 ---
 
 <!-- Entries added below as changes are made -->
+
+### [2026-04-10 10:45 AM EST] — Phase 1 bug fixes across collector pipeline
+- **What changed**: Fixed 6 bugs: DB_PORT string→int cast (connection.py), null guard on failed API fetch (items.py), save_prices missing return 0 (base.py), None snapshot_time guard (base.py), create_hypertable idempotency (schema.sql), removed bad linter-injected imports (items.py, backfill.py)
+- **Why**: Multiple runtime crash paths discovered during phase 1 review — DB pool creation would TypeError, failed API fetches would crash item collection, duplicate hypertable creation would fail on Docker restart
+- **Files affected**: connection.py, items.py, base.py, schema.sql, backfill.py
+- **PRD updated**: no
+- **CLAUDE.md updated**: no
+
+### [2026-04-10 10:50 AM EST] — Replaced PatchTST with feature-engineered GBDT pipeline in PRD
+- **What changed**: Rewrote Phase 2 to use XGBoost/LightGBM/RF/LogReg instead of PatchTST transformer. Added 50+ feature definitions (lags, returns, moving averages, volatility, volume, spread, breakouts, time, item-level). Defined regression and classification targets, training pipeline, evaluation metrics, profit backtesting, and inference service. Updated tech stack, architecture diagram, project structure, and differentiators.
+- **Why**: Gradient boosted models are proven best-in-class for tabular financial data — faster training, interpretable, no GPU required, easier to iterate as a solo developer
+- **Files affected**: PRD.md
+- **PRD updated**: yes
+- **CLAUDE.md updated**: no
+
+### [2026-04-10 10:30 AM EST] — Added EST 12-hour logging to collector entry point
+- **What changed**: Added ESTFormatter class to packages/collector/main.py (Docker entry point) with 12-hour clock and Eastern timezone. Moved logging setup before package imports with force=True to override module-level handlers.
+- **Why**: Logs were displaying UTC 24-hour time, user needs Eastern time for readability
+- **Files affected**: packages/collector/main.py, packages/collector/collectors/main.py
+- **PRD updated**: no
+- **CLAUDE.md updated**: no
+
+### [2026-04-10 10:15 AM EST] — Fixed threading.Thread args tuple bug
+- **What changed**: Changed `args="prices_5min"` to `args=("prices_5min",)` in both main.py files for backfill thread creation
+- **Why**: Bare string in args iterates characters as separate arguments, causing TypeError in backfill.run()
+- **Files affected**: packages/collector/main.py, packages/collector/collectors/main.py
+- **PRD updated**: no
+- **CLAUDE.md updated**: no
+
+### [2026-04-10 10:55 AM EST] — Created README.md for deployment
+- **What changed**: Added README with setup instructions, Docker deployment steps, database connection guide, project structure, and troubleshooting
+- **Why**: Users need documentation to deploy the project
+- **Files affected**: README.md
+- **PRD updated**: no
+- **CLAUDE.md updated**: no

@@ -36,7 +36,7 @@ class BackfillService:
 
     def get_earliest_timestamp(self, table:str) -> int | None:
 
-        oldest_timestamp = self.db.execute_query(f"SELECT MIN(EXTRACT(EPOCH FROM time)) FROM {table}")
+        oldest_timestamp = self.db.execute_query(f"SELECT MAX(EXTRACT(EPOCH FROM time)) FROM {table}")
         return int(oldest_timestamp[0][0]) if oldest_timestamp else None
 
     def calculate_timestamp_range(self, table: str, interval: int) -> list[int]:

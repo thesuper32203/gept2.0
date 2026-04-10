@@ -20,7 +20,7 @@ Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind
 |-------|-----------|-----|
 | **Backend API** | Python + FastAPI | Best ML ecosystem, proven by GePT |
 | **Database** | PostgreSQL + TimescaleDB | Time-series optimized, hypertables for price data |
-| **ML Framework** | PyTorch | PatchTST-style transformers, good solo-dev ergonomics |
+| **ML Framework** | XGBoost / LightGBM / scikit-learn | Gradient boosted models — proven best-in-class for tabular financial data, faster to train and iterate than deep learning |
 | **Task Scheduler** | APScheduler | Lightweight scheduled jobs, no Redis needed — simpler than Celery for a solo project |
 | **Frontend** | Next.js (React) | Rich dashboard, SSR for fast loads — large community for learning |
 | **Discord Bot** | discord.py | Phase 5 — deliver recommendations to Discord channels |
@@ -36,10 +36,10 @@ Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind
 ┌─────────────────────────────────────────────────┐
 │                  Docker Compose                  │
 ├──────────┬──────────┬──────────┬────────────────┤
-│Collectors│  ML      │  API     │  Frontend      │
-│(scheduled│  Worker  │ (FastAPI)│  (Next.js)     │
-│ polling) │(training │          │                │
-│          │+inference│          │                │
+│Collectors│  ML       │  API     │  Frontend      │
+│(scheduled│  Engine   │ (FastAPI)│  (Next.js)     │
+│ polling) │(features +│          │                │
+│          │ GBDT     )│          │                │
 ├──────────┴──────────┴────┬─────┴────────────────┤
 │          PostgreSQL + TimescaleDB               │
 │  prices_5min | prices_1hr | items               │
@@ -171,10 +171,11 @@ gept2.0/
 │   │   │   └── connection.py   # DB connection helper
 │   │   └── backfill.py         # Pull historical data
 │   ├── engine/                 # Phase 2-3 — ML + recommendations
-│   │   ├── features/           # Feature computation
-│   │   ├── model/              # PatchTST transformer
-│   │   ├── training/           # Training pipeline
-│   │   ├── inference/          # Prediction service
+│   │   ├── features/           # Feature computation (per-item engineering)
+│   │   ├── models/             # XGBoost, LightGBM, RF, LogReg
+│   │   ├── training/           # Training pipeline + model comparison
+│   │   ├── evaluation/         # Metrics, calibration, backtesting
+│   │   ├── inference/          # Prediction service (runs every 5min)
 │   │   └── recommendations/    # Scoring + filtering
 │   ├── api/                    # Phase 3 — FastAPI backend
 │   ├── web/                    # Phase 4 — Next.js dashboard
@@ -187,45 +188,196 @@ gept2.0/
 
 ## Phase 2: Feature Engineering & ML Model (Week 3-5)
 
-**Goal:** Train a multi-horizon price prediction model. Every step documented so you understand what the model does and why.
+**Goal:** Build a feature-engineered ML pipeline that predicts short-term price movement and order fill probability for OSRS Grand Exchange items. Every step documented so you understand what the model does and why.
+
+**Why gradient boosted models instead of transformers?** For tabular financial data with engineered features, gradient boosted decision trees (XGBoost, LightGBM) consistently outperform deep learning approaches. They train faster, require less data, are easier to debug, and produce interpretable feature importances. GePT proved transformers can work for OSRS data, but we can achieve equal or better results with a simpler, more maintainable approach.
 
 ### 2A: Feature Engine (Week 3)
-Compute features from raw price data. Each feature has a clear purpose:
 
-| Feature | What it is | Why it matters for flipping |
-|---------|-----------|---------------------------|
-| Moving averages (30min, 1hr, 4hr, 12hr, 1d, 1w) | Average price over a rolling window | Shows trend direction — is price rising or falling? |
-| Price returns (% change) | How much price changed over a window | Captures momentum — fast rises often correct |
-| Volatility (rolling std dev) | How much price bounces around | High volatility = more flip opportunity but more risk |
-| Volume ratios (buy/sell imbalance) | Ratio of instant-buy vs instant-sell volume | Imbalance signals demand shifts |
-| Spread (high - low as % of price) | Gap between buy and sell price | The fundamental flip margin |
-| Time-of-day / day-of-week | Cyclical time encoding | Prices follow player activity patterns |
+All features are computed **per item_id** — always group by item_id and sort by timestamp before computing lag or rolling features. The dataset contains ~4,000 tradable items with millions of rows.
 
-### 2B: ML Model — Multi-Resolution Transformer (Week 4-5)
-**What is this?** A neural network (think: pattern recognition engine) that looks at price history at multiple zoom levels and predicts where prices are heading.
+**Raw fields from database:**
+- `item_id`, `timestamp`, `avg_high_price`, `avg_low_price`, `high_volume`, `low_volume`
 
-**Why a transformer?** Transformers excel at finding patterns in sequences (like price over time). GePT proved this works for OSRS data.
+#### Base Derived Variables
 
-**Architecture (inspired by GePT's PatchTST, adjusted for available API data):**
-- **Short encoder**: 5-min data, 24h lookback → predict **30min, 1h, 2h, 4h** (active flips)
-- **Long encoder**: 1-hr data, 14d lookback → predict **12h, 24h, 48h** (overnight flips)
-- **Fusion head**: combines both encoders → unified prediction
-- **Output**: Price quantiles (p10, p25, p50, p75, p90) per horizon
+| Feature | Formula | Why it matters |
+|---------|---------|----------------|
+| `mid_price` | `(avg_high_price + avg_low_price) / 2` | Central reference price for all calculations |
+| `spread` | `avg_high_price - avg_low_price` | The fundamental flip margin |
+| `volume_total` | `high_volume + low_volume` | Total trading activity |
+| `spread_pct` | `spread / mid_price` | Normalized spread — comparable across items of different price |
+| `volume_imbalance` | `(high_volume - low_volume) / volume_total` | Buy/sell pressure — imbalance signals demand shifts |
 
-> **What are quantiles?** Instead of predicting "the price will be 1000gp", the model says "there's a 10% chance it'll be below 950, 50% chance below 1000, 90% chance below 1050." This range tells you how confident the model is.
+#### Lag Features
 
-### 2C: Training & Evaluation
-- **Training pipeline** — data loading, time-based train/val/test split, training loop
-- **Evaluation metrics** — calibration (are the quantiles accurate?), directional accuracy (does it predict up/down correctly >55% of the time?), profit backtesting (would following the model make money?)
-- **Inference service** — runs every 5 minutes, stores predictions in DB
+Capture recent state at specific lookback points:
 
-### Key Improvements Over GePT
-- **Two-mode focus** — active flipping (30min-4h) AND overnight (12-48h), not trying to cover everything
-- **5-min as primary short-term signal** — matches available API resolution, same as GePT but focused on shorter prediction horizons
-- **Directional confidence** — probability of price moving up/down, not just quantiles
+| Feature | Description |
+|---------|-------------|
+| `price_lag1` through `price_lag20` | `mid_price` at t-1, t-5, t-10, t-20 |
+| `volume_lag1`, `volume_lag5` | `volume_total` at t-1, t-5 |
+| `spread_lag1`, `spread_lag5` | `spread` at t-1, t-5 |
+
+#### Return Features (Momentum)
+
+How much price changed over recent windows — captures momentum and mean reversion:
+
+| Feature | Formula |
+|---------|---------|
+| `return_1` | `(mid_price - price_lag1) / price_lag1` |
+| `return_5` | `(mid_price - price_lag5) / price_lag5` |
+| `return_10` | `(mid_price - price_lag10) / price_lag10` |
+| `return_20` | `(mid_price - price_lag20) / price_lag20` |
+
+#### Moving Averages & Trend Signals
+
+| Feature | Formula | Purpose |
+|---------|---------|---------|
+| `ma_5`, `ma_20`, `ma_60` | Rolling mean of `mid_price` | Smoothed trend at different time scales |
+| `price_vs_ma5` | `mid_price / ma_5` | Is price above or below short-term average? |
+| `price_vs_ma20` | `mid_price / ma_20` | Is price above or below medium-term average? |
+| `ma5_vs_ma20` | `ma_5 / ma_20` | Crossover signal — short trend vs medium trend |
+
+#### Volatility Features
+
+How much price bounces around — high volatility = more opportunity but more risk:
+
+| Feature | Formula |
+|---------|---------|
+| `volatility_5` | `rolling_std(return_1, 5)` |
+| `volatility_20` | `rolling_std(return_1, 20)` |
+| `volatility_60` | `rolling_std(return_1, 60)` |
+
+#### Volume Features
+
+| Feature | Formula | Purpose |
+|---------|---------|---------|
+| `volume_ma5`, `volume_ma20` | Rolling mean of `volume_total` | Baseline trading activity |
+| `volume_ratio_5` | `volume_total / volume_ma5` | Short-term volume spike detection |
+| `volume_ratio_20` | `volume_total / volume_ma20` | Medium-term volume spike detection |
+| `volume_spike` | `volume_total / volume_ma20` | Abnormal volume flag |
+| `imbalance_change` | `volume_imbalance - volume_imbalance(t-1)` | Shift in buy/sell pressure |
+
+#### Spread Features
+
+| Feature | Formula |
+|---------|---------|
+| `spread_pct` | `spread / mid_price` |
+| `spread_ma5`, `spread_ma20` | Rolling mean of `spread` |
+| `spread_change` | `spread - spread_lag1` |
+
+#### Breakout Features
+
+| Feature | Formula | Purpose |
+|---------|---------|---------|
+| `rolling_max_20` | `rolling_max(mid_price, 20)` | Recent price ceiling |
+| `rolling_min_20` | `rolling_min(mid_price, 20)` | Recent price floor |
+| `price_vs_max20` | `mid_price / rolling_max_20` | How close to recent high? |
+| `price_vs_min20` | `mid_price / rolling_min_20` | How close to recent low? |
+
+#### Time Features
+
+Extract from timestamp and encode cyclically so the model understands that hour 23 is close to hour 0:
+
+| Feature | Formula |
+|---------|---------|
+| `hour`, `day_of_week`, `is_weekend` | Direct extraction from timestamp |
+| `hour_sin`, `hour_cos` | `sin(2π * hour / 24)`, `cos(2π * hour / 24)` |
+| `dow_sin`, `dow_cos` | `sin(2π * day_of_week / 7)`, `cos(2π * day_of_week / 7)` |
+
+#### Item-Level Features
+
+Computed once per item — help the model understand liquidity and volatility differences between items:
+
+| Feature | Description |
+|---------|-------------|
+| `item_avg_volume` | Mean `volume_total` for this item |
+| `item_avg_spread` | Mean `spread` for this item |
+| `item_volatility` | Std dev of `return_1` for this item |
+| `item_avg_price` | Mean `mid_price` for this item |
+
+### 2B: ML Models (Week 4)
+
+**System goal:** Predict two things per item per timestep:
+1. **Short-term price movement** — `future_return_5 = (mid_price(t+5) - mid_price) / mid_price`
+2. **Order fill probability** — will an order placed at a given price fill within a short window?
+
+#### Target Variables
+
+| Target | Type | Definition |
+|--------|------|------------|
+| `future_return_5` | Regression | % price change over next 5 periods |
+| `target_up` | Classification | `1` if `future_return_5 > threshold` |
+| `target_fill` | Classification | `1` if future low price within window ≤ order price |
+
+#### Models to Train & Compare
+
+| Model | Library | Purpose |
+|-------|---------|---------|
+| **XGBoost** | `xgboost` | Primary candidate — best on structured tabular data |
+| **LightGBM** | `lightgbm` | Faster training, handles large datasets well |
+| **Random Forest** | `scikit-learn` | Simpler ensemble baseline |
+| **Logistic Regression** | `scikit-learn` | Linear baseline — if this wins, features need work |
+
+The best-performing model on validation + backtesting becomes the production model.
+
+### 2C: Training Pipeline (Week 4-5)
+
+1. Load raw data from database
+2. Sort by `item_id` and `timestamp`
+3. Generate all features per item
+4. Drop rows with missing lag values (first N rows per item)
+5. Time-based split — **no random shuffling** (would leak future data):
+   - 70% train
+   - 15% validation
+   - 15% test
+6. Train all 4 models, log metrics for comparison
+7. Select best model
+
+### 2D: Evaluation Metrics
+
+| Metric | Target | What it tells you |
+|--------|--------|-------------------|
+| **Directional accuracy** | >55% | Does the model predict up/down correctly? |
+| **MAE / RMSE** | Lower is better | How far off are regression predictions? |
+| **Precision / Recall / F1** | Balanced | How good are classification predictions? |
+| **ROC-AUC** | >0.6 | How well does the model separate positive/negative? |
+| **Calibration** | Predicted probs ≈ actual rates | Are probability outputs trustworthy? |
+
+### 2E: Profit Backtesting
+
+Verify the model has real economic value with a simple backtest:
+
+- If predicted return > threshold → **buy**
+- If predicted return < negative threshold → **sell**
+
+Track:
+- Total profit (GP)
+- Sharpe-like return (risk-adjusted)
+- Maximum drawdown (worst losing streak)
+
+### 2F: Inference Service
+
+Runs every 5 minutes:
+
+1. Pull latest market data from database
+2. Compute features using latest window
+3. Run model predictions for all ~4,000 items
+4. Store predictions in database:
+   - `item_id`, `timestamp`, `predicted_return`, `predicted_fill_probability`
+
+These predictions power the recommendation engine in Phase 3.
+
+### Key Advantages Over Transformer Approach
+- **Faster iteration** — train in minutes, not hours
+- **Interpretable** — feature importance tells you exactly what drives predictions
+- **Proven on tabular data** — gradient boosted models consistently win Kaggle competitions on structured financial data
+- **Simpler infrastructure** — no GPU required, runs on CPU
+- **Easier debugging** — inspect individual features, not hidden attention weights
 
 ### Companion Doc: `docs/ml-explained.md`
-Will contain: what is a transformer, how PatchTST works, what quantile regression means, how to interpret model output — all in plain language with OSRS examples
+Will contain: what is gradient boosting, how XGBoost works, what feature importance means, how to interpret predictions — all in plain language with OSRS examples
 
 ---
 
@@ -256,8 +408,8 @@ Will contain: what is a transformer, how PatchTST works, what quantile regressio
 ### Borrow from GePT
 - Recommendation filtering by capital/style/risk
 - EV-adjusted profit calculation
-- Fill probability concept
-- Confidence tiers (High/Medium/Low)
+- Fill probability concept (now a dedicated classification model)
+- Confidence tiers (High/Medium/Low) — derived from model prediction confidence
 
 ### Borrow from Flipping Copilot
 - Flip lifecycle tracking (buy → waiting → sell → complete)
@@ -313,7 +465,7 @@ Will contain: what is a transformer, how PatchTST works, what quantile regressio
 ## Verification Plan
 
 1. **Phase 1**: Query DB to confirm prices are being collected continuously. Check for gaps. Compare against Wiki API directly.
-2. **Phase 2**: Run model evaluation — check calibration (predicted p50 should be median), directional accuracy >55%, backtest profit > baseline (buy-low-sell-high without ML).
+2. **Phase 2**: Run model evaluation — check directional accuracy >55%, calibration (predicted probabilities match actual rates), backtest profit > baseline (buy-low-sell-high without ML), and feature importance makes intuitive sense.
 3. **Phase 3**: Hit API endpoints, verify recommendations make sense (positive EV, reasonable prices, correct tax calc).
 4. **Phase 4**: Load dashboard, filter recommendations, check charts render correctly, verify portfolio tracking math.
 
@@ -321,8 +473,10 @@ Will contain: what is a transformer, how PatchTST works, what quantile regressio
 
 ## What Makes gept2.0 Different
 
-1. **Short-term predictions** — 30min/1h/2h horizons that existing tools miss
-2. **Transparent ML** — you own the model, can inspect and improve it
-3. **Multi-resolution fusion** — combines rapid price movements with longer trends
-4. **Modern web UI** — not locked into RuneLite, accessible from any device
-5. **Ground-up pipeline** — every step from data collection to display is yours to control
+1. **Short-term predictions** — 5-period ahead price movement and fill probability
+2. **Transparent ML** — you own the model, can inspect feature importances and understand why it predicts what it does
+3. **Feature-engineered approach** — 50+ carefully designed features covering momentum, volatility, volume, spread, breakouts, and time patterns
+4. **Proven architecture** — gradient boosted models (XGBoost/LightGBM) are the gold standard for tabular financial data
+5. **Modern web UI** — not locked into RuneLite, accessible from any device
+6. **Ground-up pipeline** — every step from data collection to display is yours to control
+7. **No GPU required** — trains on CPU in minutes, not hours
