@@ -4,7 +4,7 @@ Track every significant error encountered and how it was fixed.
 
 ## Format
 ```
-### [YYYY-MM-DD] — Error summary
+### [YYYY-MM-DD HH:MM EST] — Error summary
 - **Error**: Full error message or description
 - **Root cause**: What caused it
 - **Fix**: What was changed to resolve it

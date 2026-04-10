@@ -4,7 +4,7 @@ Track every significant structural change, new feature, or architectural decisio
 
 ## Format
 ```
-### [YYYY-MM-DD] — Short title
+### [YYYY-MM-DD HH:MM EST] — Short title
 - **What changed**: Description
 - **Why**: Reason for the change
 - **Files affected**: list of files

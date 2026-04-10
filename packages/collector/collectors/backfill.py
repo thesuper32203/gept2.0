@@ -1,14 +1,14 @@
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from logging import Logger
-from threading import Thread
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
 from packages.collector.db.connection import DatabaseConnection
-from packages.collector.collectors.items import ItemCollector
+
+EST = ZoneInfo("America/New_York")
 
 BASE_URL: str = "https://prices.runescape.wiki/api/v1/osrs"
 FIVE_MIN_ENDPOINT: str = f"{BASE_URL}/5m"
@@ -19,8 +19,6 @@ DELAY_BETWEEN_REQUESTS: float = 1.0             # Seconds between timestamp requ
 BACKFILL_DAYS: int = 90                         # How many days back to backfill (from today)
 FIVE_MIN_INTERVAL: int = 300                    # Seconds between 5-min windows
 ONE_HOUR_INTERVAL: int = 3600                   # Seconds between 1-hour windows
-
-import threading
 
 class BackfillService:
     def __init__(self, db: DatabaseConnection):
@@ -104,7 +102,9 @@ class BackfillService:
         logging.info(f"Fetching prices at {endpoint}")
 
         timestamps = self.calculate_timestamp_range(table, interval)
-        logging.info(f"Fetched {len(timestamps)} timestamps resuming from {timestamps[0]} to {timestamps[-1]}")
+        start_readable = datetime.fromtimestamp(timestamps[0], tz=EST).strftime("%Y-%m-%d %I:%M:%S %p %Z")
+        end_readable = datetime.fromtimestamp(timestamps[-1], tz=EST).strftime("%Y-%m-%d %I:%M:%S %p %Z")
+        logging.info(f"Fetched {len(timestamps)} timestamps resuming from {start_readable} to {end_readable}")
 
         logging.info(f"Starting backfill for {table}, {len(timestamps)} timestamps to fetch")
         total_rows = 0
@@ -125,3 +125,10 @@ class BackfillService:
     #INFO:root:Fetched 24834 timestamps resuming from 1775436300 to 1767986400
     #INFO:root:Fetched 24308 timestamps resuming from 1775278800 to 1767986700
 
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    db = DatabaseConnection()
+    bs = BackfillService(
+        db=db,
+    )
+    bs.run("prices_5min")

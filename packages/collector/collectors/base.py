@@ -72,6 +72,7 @@ class BaseCollector:
             return count
         except Exception as e:
             self.logger.error(f"Error in saved prices {self.collector_name} - {e}")
+            return 0
 
     def is_duplicate(self, snapshot_time:datetime) -> bool:
 
@@ -91,7 +92,11 @@ class BaseCollector:
             api_response = self.fetch_prices()
             snapshot_time, rows = self.parse_prices(api_response)
 
-            #If snapshot is already record wait till next snapshot
+            if snapshot_time is None:
+                self.logger.error(f"Failed to parse snapshot time for {self.collector_name}, skipping")
+                return
+
+            #If snapshot is already recorded wait till next snapshot
             if self.is_duplicate(snapshot_time):
                 self.logger.info(f"Data for {snapshot_time} alreadty exists, skipping")
                 return

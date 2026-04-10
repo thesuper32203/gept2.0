@@ -5,7 +5,6 @@ from typing import Any
 
 import requests
 
-from packages.collector import db
 from packages.collector.db.connection import DatabaseConnection
 
 # constants
@@ -67,6 +66,9 @@ class ItemCollector:
         try:
             self.logger.info("Starting item metadata collection")
             raw_items = self.fetch_item()
+            if raw_items is None:
+                self.logger.error("No items fetched, skipping collection")
+                return
             parsed_items = self.parse_item(raw_items)
             count = self.save_item(parsed_items)
             self.db.upsert(

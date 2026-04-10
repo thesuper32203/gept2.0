@@ -35,4 +35,4 @@
 ## Change Logging (logs/)
 - After any significant structural change (new file, new module, refactored architecture), add an entry to `logs/changes.md`
 - After resolving any non-trivial bug or error, log it in `logs/errors.md`
-- Log format: date, what changed, why, files affected, whether PRD/CLAUDE.md were updated
+- Log format: `[YYYY-MM-DD HH:MM EST]`, what changed, why, files affected, whether PRD/CLAUDE.md were updated

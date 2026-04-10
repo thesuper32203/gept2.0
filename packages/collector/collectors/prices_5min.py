@@ -34,4 +34,4 @@ if __name__ == "__main__":
     )
 
     price_5m = PriceCollector5Min(db=db)
-    price_5m.run_loop()
+    price_5m.run()

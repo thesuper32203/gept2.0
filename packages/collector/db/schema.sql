@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
 CREATE TABLE IF NOT EXISTS prices_5min (
     time            TIMESTAMPTZ     NOT NULL,
     item_id         INTEGER         NOT NULL,
@@ -9,7 +11,7 @@ CREATE TABLE IF NOT EXISTS prices_5min (
 
 -- Convert to hypertable — TimescaleDB partitions by time automatically
 -- chunk_time_interval = 1 day means each internal partition covers 24 hours
-SELECT create_hypertable('prices_5min', 'time', chunk_time_interval => INTERVAL '1 day');
+SELECT create_hypertable('prices_5min', 'time', chunk_time_interval => INTERVAL '1 day', if_not_exists => true);
 
 -- Index for fast lookups: "get all prices for item X between time A and B"
 CREATE INDEX idx_prices_5min_item_time ON prices_5min (item_id, time DESC);
@@ -24,7 +26,7 @@ CREATE TABLE IF NOT EXISTS prices_1hr (
     low_volume      INTEGER
 );
 
-SELECT create_hypertable('prices_1hr', 'time', chunk_time_interval => INTERVAL '7 days');
+SELECT create_hypertable('prices_1hr', 'time', chunk_time_interval => INTERVAL '7 days', if_not_exists => true);
 
 CREATE INDEX idx_prices_1hr_item_time ON prices_1hr (item_id, time DESC);
 

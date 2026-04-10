@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASS}
     volumes:
       - pgdata:/var/lib/postgresql/data                             # Persist data between restarts
       - ./packages/collector/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql  # Auto-run schema on first start
@@ -26,8 +26,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_HOST: db                        # "db" = the service name above. Docker networking resolves this.
-      DB_PORT: "5432"
+      # DB_HOST: db                        # "db" = the service name above. Docker networking resolves this.
+      # DB_PORT: "5432"
+      DB_HOST: host.docker.internal       # Points to local machine instead of Docker db container
+      DB_PORT: "6543"
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}

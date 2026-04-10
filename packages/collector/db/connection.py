@@ -15,7 +15,7 @@ from psycopg2 import sql
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
 # load env file
-load_dotenv(ROOT_DIR / ".env.local")
+load_dotenv(ROOT_DIR / ".env")
 
 
 class DatabaseConnection:
@@ -34,7 +34,7 @@ class DatabaseConnection:
             user=self.DB_USER,
             password=self.DB_PASS,
             host=self.DB_HOST,
-            port=self.DB_PORT,
+            port=int(self.DB_PORT),
         )
         self.logger = logging.getLogger(__name__)
 
