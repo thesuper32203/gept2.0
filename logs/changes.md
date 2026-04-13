@@ -16,6 +16,13 @@ Track every significant structural change, new feature, or architectural decisio
 
 <!-- Entries added below as changes are made -->
 
+### [2026-04-12 08:15 PM EST] — Docker deployment fixes for full containerized operation
+- **What changed**: Switched collector DB_HOST from `host.docker.internal:6543` to `db:5432` for Docker-internal networking. Added `PYTHONUNBUFFERED=1` to fix silent log buffering. Added `IF NOT EXISTS` to schema index creation. Resolved stale container name conflicts.
+- **Why**: Collector was configured to talk to host machine DB instead of the containerized TimescaleDB; Python stdout buffering made Docker logs appear frozen
+- **Files affected**: docker-compose.yml, packages/collector/db/schema.sql
+- **PRD updated**: no
+- **CLAUDE.md updated**: no
+
 ### [2026-04-10 10:45 AM EST] — Phase 1 bug fixes across collector pipeline
 - **What changed**: Fixed 6 bugs: DB_PORT string→int cast (connection.py), null guard on failed API fetch (items.py), save_prices missing return 0 (base.py), None snapshot_time guard (base.py), create_hypertable idempotency (schema.sql), removed bad linter-injected imports (items.py, backfill.py)
 - **Why**: Multiple runtime crash paths discovered during phase 1 review — DB pool creation would TypeError, failed API fetches would crash item collection, duplicate hypertable creation would fail on Docker restart
