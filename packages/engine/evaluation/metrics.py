@@ -64,7 +64,8 @@ FIVE_PERIODS: np.timedelta64 = np.timedelta64(25, 'm')  # 5 x 5-min candles
 def backtest(
     predictions: np.ndarray,
     actuals: np.ndarray,
-    buy_prices: np.ndarray,
+    buy_prices: np.ndarray,   # avg_low_price  — what you pay to enter
+    sell_prices: np.ndarray,  # avg_high_price — what you sell for in the future
     times: np.ndarray,
     item_ids: np.ndarray | None = None,
     item_names: dict[int, str] | None = None,
@@ -85,7 +86,7 @@ def backtest(
     # Min-heap of close times for open trade slots
     open_slots: list[np.datetime64] = []
 
-    for i, (pred, actual, buy_price) in enumerate(zip(predictions, actuals, buy_prices)):
+    for i, (pred, actual, buy_price, sell_price) in enumerate(zip(predictions, actuals, buy_prices, sell_prices)):
         t = times[i]
 
         if cutoff is not None and t > cutoff:
@@ -111,8 +112,9 @@ def backtest(
             continue
 
         quantity = int(position_gp // buy_price)
-        cost = quantity * buy_price
-        sale_value = cost * (1 + actual)
+        cost = quantity * buy_price                          # pay avg_low_price per unit
+        future_sell_price = sell_price * (1 + actual)       # approximate future avg_high_price
+        sale_value = quantity * future_sell_price
         tax = sale_value * GE_TAX
         profit_gp = sale_value - cost - tax
 
