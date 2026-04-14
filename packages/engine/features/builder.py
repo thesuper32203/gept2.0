@@ -224,7 +224,9 @@ def train(df: pd.DataFrame) -> None:
 
         logging.info("--- Backtest on Test Set ---")
         test_predictions = model.predict(x_test)
-        backtest(test_predictions, y_test.to_numpy())
+        item_names_rows = DatabaseConnection().execute_query("SELECT item_id, name FROM items")
+        item_names = {row[0]: row[1] for row in item_names_rows}
+        backtest(test_predictions, y_test.to_numpy(), item_ids=test_df["item_id"].to_numpy(), item_names=item_names)
 
         joblib.dump(model, MODELS_DIR / "best_model.pkl")
         logging.info(f"Saved to {MODELS_DIR / 'best_model.pkl'}")

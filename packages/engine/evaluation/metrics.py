@@ -53,27 +53,57 @@ def evaluate_feature_importance(name: str, model, feature_columns: list[str], to
     return importance
 
 
-def backtest(predictions: np.ndarray, actuals: np.ndarray, buy_threshold: float = 0.002, sell_threshold: float = -0.002) -> dict:
+def backtest(
+    predictions: np.ndarray,
+    actuals: np.ndarray,
+    item_ids: np.ndarray | None = None,
+    item_names: dict[int, str] | None = None,
+    buy_threshold: float = 0.002,
+    sell_threshold: float = -0.002,
+) -> dict:
     total_profit = 0.0
     trades = 0
     equity_curve = [0.0]
+    item_stats: dict[int, dict] = {}
 
-    for pred, actual in zip(predictions, actuals):
+    for i, (pred, actual) in enumerate(zip(predictions, actuals)):
+        profit = 0.0
         if pred > buy_threshold:
-            total_profit += actual
+            profit = actual
             trades += 1
         elif pred < sell_threshold:
-            total_profit -= actual
+            profit = -actual
             trades += 1
+        else:
+            equity_curve.append(total_profit)
+            continue
+
+        total_profit += profit
         equity_curve.append(total_profit)
 
-    # Max drawdown: largest peak-to-trough decline
+        if item_ids is not None:
+            item_id = int(item_ids[i])
+            if item_id not in item_stats:
+                item_stats[item_id] = {"trades": 0, "net_profit": 0.0}
+            item_stats[item_id]["trades"] += 1
+            item_stats[item_id]["net_profit"] += profit
+
+    # Max drawdown
     equity = np.array(equity_curve)
     peak = np.maximum.accumulate(equity)
-    drawdowns = equity - peak
-    max_drawdown = float(drawdowns.min())
+    max_drawdown = float((equity - peak).min())
 
     logger.info(
         f"Backtest — Total profit: {total_profit:.4f} | Trades: {trades} | Max drawdown: {max_drawdown:.4f}"
     )
+
+    if item_stats:
+        top10 = sorted(item_stats.items(), key=lambda x: x[1]["trades"], reverse=True)[:10]
+        logger.info("Top 10 most traded items:")
+        logger.info(f"  {'Item':<35} {'Trades':>8} {'Net Profit':>12}")
+        logger.info(f"  {'-'*57}")
+        for item_id, stats in top10:
+            name = item_names.get(item_id, str(item_id)) if item_names else str(item_id)
+            logger.info(f"  {name:<35} {stats['trades']:>8,} {stats['net_profit']:>12.4f}")
+
     return {"total_profit": total_profit, "trades": trades, "max_drawdown": max_drawdown}
