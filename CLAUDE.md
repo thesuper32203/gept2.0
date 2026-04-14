@@ -32,6 +32,12 @@
 - If a new coding rule, architectural constraint, or pattern is established, add it to `CLAUDE.md`
 - Never let the codebase drift silently from the plan — every intentional deviation must be documented
 
+## Git Workflow
+- Before making any code changes, create a new branch: `git checkout -b <descriptive-name>`
+- Branch naming: use kebab-case describing the feature/fix (e.g. `feature/rolling-features`, `fix/docker-port`)
+- After completing changes, stage and commit with a clear message, then push: `git push -u origin <branch>`
+- Never commit directly to `main`
+
 ## Change Logging (logs/)
 - After any significant structural change (new file, new module, refactored architecture), add an entry to `logs/changes.md`
 - After resolving any non-trivial bug or error, log it in `logs/errors.md`

@@ -1,9 +1,13 @@
 import pandas as pd
 import numpy as np
 import logging
+from pathlib import Path
+
+MODELS_DIR = Path(__file__).resolve().parents[2] / "engine" /"models"
 
 from sklearn.metrics import mean_absolute_error, accuracy_score
 
+from packages.collector import db
 from packages.collector.db.connection import DatabaseConnection
 
 from sklearn.model_selection import train_test_split
@@ -20,9 +24,17 @@ FEATURE_COLUMNS = [
     "price_lag1", "price_lag5", "price_lag10", "price_lag20",
     "volume_lag1", "volume_lag5", "spread_lag1", "spread_lag5",
     "return_1", "return_5", "return_10", "return_20",
-    "hour_sin", "hour_cos", "dow_sin", "dow_cos", "is_weekend"
+    "ma_5", "ma_20", "ma_60",
+    "price_vs_ma5", "price_vs_ma20", "ma5_vs_ma20",
+    "volatility_5", "volatility_20", "volatility_60",
+    "volume_ma5", "volume_ma20", "volume_ratio_5", "volume_ratio_20",
+    "spread_ma5", "spread_ma20", "spread_change",
+    "rolling_max_20", "rolling_min_20", "price_vs_max20", "price_vs_min20",
+    "hour_sin", "hour_cos", "dow_sin", "dow_cos", "is_weekend",
+    "item_avg_volume", "item_avg_spread", "item_volatility", "item_avg_price",
 ]
 
+THRESHOLD = 0.001  # 0.1% — tune this based on your data
 TARGET_REGRESSION = "future_return_5"
 TARGET_CLASSIFICATION = "target_up"
 
@@ -38,9 +50,11 @@ xgb_model = xgb.XGBRegressor(
 # LightGBM
 lgb_model = lgb.LGBMRegressor(
     n_estimators=500,
-    max_depth=6,
+    num_leaves=64,
     learning_rate=0.05,
     subsample=0.8,
+    colsample_bytree=0.7,
+    verbosity=-1
 )
 
 rf_model = RandomForestRegressor(n_estimators=200, max_depth=10)
@@ -59,7 +73,7 @@ def add_base_features(df: pd.DataFrame) -> pd.DataFrame:
     df["spread"] = (df["avg_high_price"] - df["avg_low_price"])
     df["volume_total"] = df["high_volume"] + df["low_volume"]
     df["spread_pct"] = df["spread"] / df["mid_price"]
-    df["volume_imbalance"] = df["volume_total"] / df["mid_price"]
+    df["volume_imbalance"] = (df["high_volume"] - df["low_volume"]) / df["mid_price"]
     return df
 
 def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -82,9 +96,43 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def rolling_features(df: pd.DataFrame) -> pd.DataFrame | None:
-    #Need to build
-    return None
+def rolling_features(df: pd.DataFrame) -> pd.DataFrame:
+
+    g = df.groupby("item_id")
+
+    # Moving averages
+    df["ma_5"] = g["mid_price"].transform(lambda x: x.rolling(5).mean())
+    df["ma_20"] = g["mid_price"].transform(lambda x: x.rolling(20).mean())
+    df["ma_60"] = g["mid_price"].transform(lambda x: x.rolling(60).mean())
+
+    # Trend signals
+    df["price_vs_ma5"] = df["mid_price"] / df["ma_5"]
+    df["price_vs_ma20"] = df["mid_price"] / df["ma_20"]
+    df["ma5_vs_ma20"] = df["ma_5"] / df["ma_20"]
+
+    # Volatility (rolling std of 1-period return)
+    df["volatility_5"] = g["return_1"].transform(lambda x: x.rolling(5).std())
+    df["volatility_20"] = g["return_1"].transform(lambda x: x.rolling(20).std())
+    df["volatility_60"] = g["return_1"].transform(lambda x: x.rolling(60).std())
+
+    # Volume rolling features
+    df["volume_ma5"] = g["volume_total"].transform(lambda x: x.rolling(5).mean())
+    df["volume_ma20"] = g["volume_total"].transform(lambda x: x.rolling(20).mean())
+    df["volume_ratio_5"] = df["volume_total"] / df["volume_ma5"]
+    df["volume_ratio_20"] = df["volume_total"] / df["volume_ma20"]
+
+    # Spread rolling features
+    df["spread_ma5"] = g["spread"].transform(lambda x: x.rolling(5).mean())
+    df["spread_ma20"] = g["spread"].transform(lambda x: x.rolling(20).mean())
+    df["spread_change"] = df["spread"] - df["spread_lag1"]
+
+    # Breakout features
+    df["rolling_max_20"] = g["mid_price"].transform(lambda x: x.rolling(20).max())
+    df["rolling_min_20"] = g["mid_price"].transform(lambda x: x.rolling(20).min())
+    df["price_vs_max20"] = df["mid_price"] / df["rolling_max_20"]
+    df["price_vs_min20"] = df["mid_price"] / df["rolling_min_20"]
+
+    return df
 
 def time_features(df: pd.DataFrame) -> pd.DataFrame:
 
@@ -116,7 +164,6 @@ def target_features(df: pd.DataFrame) -> pd.DataFrame:
     df["future_return_5"] = (df["future_return_5"] - df["mid_price"]) / df["mid_price"]
 
     # Classification target: will the price go up?
-    THRESHOLD = 0.001  # 0.1% — tune this based on your data
     df["target_up"] = (df["future_return_5"] > THRESHOLD).astype(int)
     return df
 
@@ -124,58 +171,60 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna()
     return df
 
-def train(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values(["time"])
+def train(df: pd.DataFrame) -> None:
+    df = df.sort_values("time")
 
     n = len(df)
     train_end = int(n * 0.70)
     val_end = int(n * 0.85)
 
-    train = df.iloc[:train_end]
-    val = df.iloc[train_end:val_end]
-    test = df.iloc[val_end:]
+    train_df = df.iloc[:train_end]
+    val_df = df.iloc[train_end:val_end]
 
-    x_train = train[FEATURE_COLUMNS]
-    y_train = train[TARGET_REGRESSION]
-    x_val = val[FEATURE_COLUMNS]
-    y_val = val[TARGET_REGRESSION]
-    x_test = test[FEATURE_COLUMNS]
-    y_test = test[TARGET_REGRESSION]
+    x_train = train_df[FEATURE_COLUMNS]
+    y_train = train_df[TARGET_REGRESSION]
+    x_val = val_df[FEATURE_COLUMNS]
+    y_val = val_df[TARGET_REGRESSION]
 
-    #xgb_model.fit(x_train, y_train)
-    #predictions = xgb_model.predict(x_val)
-    #lgb_model.fit(x_train, y_train)
-    #predictions = lgb_model.predict(x_val)
-    rf_model.fit(x_train, y_train)
-    predictions = rf_model.predict(x_val)
-    mae = mean_absolute_error(y_val, predictions)
-    rmse = np.sqrt(mean_absolute_error(y_val, predictions))
-    actual_direction = (y_val > 0).astype(int)
-    predictioned_direction = (predictions > 0).astype(int)
-    dir_accuracy = accuracy_score(actual_direction, predictioned_direction)
-    print("MAE:", mae)
-    print("RMSE:", rmse)
-    print("ACCURACY:", dir_accuracy)
+    models = {
+        "XGBoost": xgb_model,
+        "LightGBM": lgb_model,
+        "RandomForest": rf_model,
+    }
 
-    # lgb_model.fit(x_train, y_train)
-    # rf_model = RandomForestRegressor(n_estimators=200, max_depth=10)
-    # rf_model.fit(x_train, y_train)
-    #print(lgb_model.predict(x_val))
-    #print(rf_model.predict(x_val))
+    best_model = None
+    best_dir_accuracy = 0.0
 
-    return df
+    for name, model in models.items():
+        model.fit(x_train, y_train)
+        predictions = model.predict(x_val)
+
+        mae = mean_absolute_error(y_val, predictions)
+        rmse = np.sqrt(mean_absolute_error(y_val, predictions))
+        dir_accuracy = accuracy_score((y_val > 0).astype(int), (predictions > 0).astype(int))
+
+        logging.info(f"{name} — MAE: {mae:.6f} | RMSE: {rmse:.6f} | Dir accuracy: {dir_accuracy:.4f}")
+
+        if dir_accuracy > best_dir_accuracy:
+            best_dir_accuracy = dir_accuracy
+            best_model = (name, model)
+
+    if best_model:
+        name, model = best_model
+        joblib.dump(model, MODELS_DIR / "best_model.pkl")
+        logging.info(f"Best model: {name} ({best_dir_accuracy:.4f} dir accuracy) — saved to {MODELS_DIR / 'best_model.pkl'}")
 
 def test():
     db = DatabaseConnection()
     data = load_raw_data(db)
     data = add_base_features(data)
     data = add_lag_features(data)
+    data = rolling_features(data)
     data = time_features(data)
     data = target_features(data)
     data = clean(data)
-    data = train(data)
+    train(data)
     return data
 
 if __name__ == "__main__":
-    raw_data = test()
-    print(raw_data.columns)
+  raw_data = test()
