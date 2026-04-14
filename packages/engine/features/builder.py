@@ -226,7 +226,15 @@ def train(df: pd.DataFrame) -> None:
         test_predictions = model.predict(x_test)
         item_names_rows = DatabaseConnection().execute_query("SELECT item_id, name FROM items")
         item_names = {row[0]: row[1] for row in item_names_rows}
-        backtest(test_predictions, y_test.to_numpy(), prices=test_df["mid_price"].to_numpy(), item_ids=test_df["item_id"].to_numpy(), item_names=item_names)
+        backtest(
+            test_predictions,
+            y_test.to_numpy(),
+            prices=test_df["mid_price"].to_numpy(),
+            item_ids=test_df["item_id"].to_numpy(),
+            item_names=item_names,
+            times=test_df["time"].to_numpy(),
+            trading_days=7,
+        )
 
         joblib.dump(model, MODELS_DIR / "best_model.pkl")
         logging.info(f"Saved to {MODELS_DIR / 'best_model.pkl'}")

@@ -2,6 +2,7 @@ import logging
 
 import numpy as np
 import pandas as pd
+from datetime import timedelta
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -63,6 +64,8 @@ def backtest(
     prices: np.ndarray,
     item_ids: np.ndarray | None = None,
     item_names: dict[int, str] | None = None,
+    times: np.ndarray | None = None,
+    trading_days: int | None = 7,
     starting_capital: int = STARTING_CAPITAL,
     max_position_pct: float = MAX_POSITION_PCT,
     buy_threshold: float = 0.002,
@@ -74,7 +77,13 @@ def backtest(
     equity_curve = [capital]
     item_stats: dict[int, dict] = {}
 
+    cutoff = None
+    if times is not None and trading_days is not None:
+        cutoff = times[0] + timedelta(days=trading_days)
+
     for i, (pred, actual, price) in enumerate(zip(predictions, actuals, prices)):
+        if cutoff is not None and times[i] > cutoff:
+            break
         # Determine trade direction
         if pred > buy_threshold:
             direction = 1
@@ -108,8 +117,9 @@ def backtest(
     max_drawdown_gp = float((equity - peak).min())
     total_profit_gp = capital - starting_capital
 
+    window = f"{trading_days} day(s)" if trading_days else "full test set"
     logger.info(
-        f"Backtest — Starting: {starting_capital:,} GP | "
+        f"Backtest ({window}) — Starting: {starting_capital:,} GP | "
         f"Final: {capital:,.0f} GP | "
         f"Profit: {total_profit_gp:+,.0f} GP | "
         f"Trades: {trades:,} | Skipped (unaffordable): {skipped:,} | "
