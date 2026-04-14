@@ -57,7 +57,7 @@ lgb_model = lgb.LGBMRegressor(
     verbosity=-1
 )
 
-rf_model = RandomForestRegressor(n_estimators=200, max_depth=10)
+# rf_model = RandomForestRegressor(n_estimators=200, max_depth=10)
 
 def load_raw_data(db: DatabaseConnection) -> pd.DataFrame:
 
@@ -172,6 +172,12 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def train(df: pd.DataFrame) -> None:
+    from packages.engine.evaluation.metrics import (
+        evaluate_regression,
+        evaluate_feature_importance,
+        backtest,
+    )
+
     df = df.sort_values("time")
 
     n = len(df)
@@ -180,39 +186,48 @@ def train(df: pd.DataFrame) -> None:
 
     train_df = df.iloc[:train_end]
     val_df = df.iloc[train_end:val_end]
+    test_df = df.iloc[val_end:]
 
     x_train = train_df[FEATURE_COLUMNS]
     y_train = train_df[TARGET_REGRESSION]
     x_val = val_df[FEATURE_COLUMNS]
     y_val = val_df[TARGET_REGRESSION]
+    x_test = test_df[FEATURE_COLUMNS]
+    y_test = test_df[TARGET_REGRESSION]
 
     models = {
         "XGBoost": xgb_model,
         "LightGBM": lgb_model,
-        "RandomForest": rf_model,
+        # "RandomForest": rf_model,
     }
 
     best_model = None
     best_dir_accuracy = 0.0
 
+    logging.info("=== Validation Set Metrics ===")
     for name, model in models.items():
         model.fit(x_train, y_train)
-        predictions = model.predict(x_val)
-
-        mae = mean_absolute_error(y_val, predictions)
-        rmse = np.sqrt(mean_absolute_error(y_val, predictions))
-        dir_accuracy = accuracy_score((y_val > 0).astype(int), (predictions > 0).astype(int))
-
-        logging.info(f"{name} — MAE: {mae:.6f} | RMSE: {rmse:.6f} | Dir accuracy: {dir_accuracy:.4f}")
-
-        if dir_accuracy > best_dir_accuracy:
-            best_dir_accuracy = dir_accuracy
+        metrics = evaluate_regression(name, model, x_val, y_val)
+        if metrics["dir_accuracy"] > best_dir_accuracy:
+            best_dir_accuracy = metrics["dir_accuracy"]
             best_model = (name, model)
 
     if best_model:
         name, model = best_model
+        logging.info(f"\n=== Best Model: {name} ===")
+
+        logging.info("--- Test Set Metrics ---")
+        evaluate_regression(name, model, x_test, y_test)
+
+        logging.info("--- Feature Importance (top 20) ---")
+        evaluate_feature_importance(name, model, FEATURE_COLUMNS)
+
+        logging.info("--- Backtest on Test Set ---")
+        test_predictions = model.predict(x_test)
+        backtest(test_predictions, y_test.to_numpy())
+
         joblib.dump(model, MODELS_DIR / "best_model.pkl")
-        logging.info(f"Best model: {name} ({best_dir_accuracy:.4f} dir accuracy) — saved to {MODELS_DIR / 'best_model.pkl'}")
+        logging.info(f"Saved to {MODELS_DIR / 'best_model.pkl'}")
 
 def test():
     db = DatabaseConnection()
@@ -227,4 +242,5 @@ def test():
     return data
 
 if __name__ == "__main__":
-  raw_data = test()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    raw_data = test()
