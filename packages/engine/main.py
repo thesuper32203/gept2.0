@@ -69,6 +69,7 @@ def run_backtest(trading_days: int) -> None:
         buy_prices=test_df["avg_low_price"].to_numpy(),
         sell_prices=test_df["avg_high_price"].to_numpy(),
         times=test_df["time"].to_numpy(),
+        volumes=test_df["volume_total"].to_numpy(),
         item_ids=test_df["item_id"].to_numpy(),
         item_names=item_names,
         trading_days=trading_days,

@@ -54,11 +54,14 @@ def evaluate_feature_importance(name: str, model, feature_columns: list[str], to
     return importance
 
 
-STARTING_CAPITAL: int = 1_000_000  # 1M GP
-MAX_POSITION_PCT: float = 0.10     # Max 10% of capital per trade
-MAX_ACTIVE_TRADES: int = 8         # OSRS GE trade slot limit
-GE_TAX: float = 0.02              # 2% tax on every sale
-FIVE_PERIODS: np.timedelta64 = np.timedelta64(25, 'm')  # 5 x 5-min candles
+STARTING_CAPITAL: int = 1_000_000    # 1M GP
+MAX_POSITION_PCT: float = 0.10       # Max 10% of capital per trade
+MAX_ACTIVE_TRADES: int = 8           # OSRS GE trade slot limit
+GE_TAX: float = 0.02                 # 2% tax on every sale
+HIGH_VOLUME_THRESHOLD: int = 50_000  # volume_total per 5-min window to be "high volume"
+ONE_PERIOD: np.timedelta64 = np.timedelta64(5, 'm')   # 1 x 5-min candle
+THREE_PERIODS: np.timedelta64 = np.timedelta64(15, 'm')  # 3 x 5-min candles (force-sell cap)
+FIVE_PERIODS: np.timedelta64 = np.timedelta64(25, 'm')   # 5 x 5-min candles
 
 
 def backtest(
@@ -67,6 +70,7 @@ def backtest(
     buy_prices: np.ndarray,   # avg_low_price  — what you pay to enter
     sell_prices: np.ndarray,  # avg_high_price — what you sell for in the future
     times: np.ndarray,
+    volumes: np.ndarray,      # volume_total per row — determines holding period
     item_ids: np.ndarray | None = None,
     item_names: dict[int, str] | None = None,
     trading_days: int | None = 7,
@@ -86,7 +90,7 @@ def backtest(
     # Min-heap of close times for open trade slots
     open_slots: list[np.datetime64] = []
 
-    for i, (pred, actual, buy_price, sell_price) in enumerate(zip(predictions, actuals, buy_prices, sell_prices)):
+    for i, (pred, actual, buy_price, sell_price, volume) in enumerate(zip(predictions, actuals, buy_prices, sell_prices, volumes)):
         t = times[i]
 
         if cutoff is not None and t > cutoff:
@@ -111,9 +115,17 @@ def backtest(
             skipped_unaffordable += 1
             continue
 
+        # Holding period: high volume items flip in 5 min, everything else force-sold at 15 min
+        if volume >= HIGH_VOLUME_THRESHOLD:
+            slot_duration = ONE_PERIOD
+            profit_scale = 1 / 5   # 5 min out of 25 min target window
+        else:
+            slot_duration = THREE_PERIODS
+            profit_scale = 3 / 5   # 15 min out of 25 min target window
+
         quantity = int(position_gp // buy_price)
-        cost = quantity * buy_price                          # pay avg_low_price per unit
-        future_sell_price = sell_price * (1 + actual)       # approximate future avg_high_price
+        cost = quantity * buy_price                                    # pay avg_low_price per unit
+        future_sell_price = sell_price * (1 + actual * profit_scale)  # scale return to holding period
         sale_value = quantity * future_sell_price
         tax = sale_value * GE_TAX
         profit_gp = sale_value - cost - tax
@@ -121,7 +133,7 @@ def backtest(
         capital += profit_gp
         trades += 1
         equity_curve.append(capital)
-        heapq.heappush(open_slots, t + FIVE_PERIODS)
+        heapq.heappush(open_slots, t + slot_duration)
 
         if item_ids is not None:
             item_id = int(item_ids[i])
