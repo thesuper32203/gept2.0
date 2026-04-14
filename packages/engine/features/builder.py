@@ -229,10 +229,10 @@ def train(df: pd.DataFrame) -> None:
         backtest(
             test_predictions,
             y_test.to_numpy(),
-            prices=test_df["mid_price"].to_numpy(),
+            buy_prices=test_df["avg_high_price"].to_numpy(),
+            times=test_df["time"].to_numpy(),
             item_ids=test_df["item_id"].to_numpy(),
             item_names=item_names,
-            times=test_df["time"].to_numpy(),
             trading_days=7,
         )
 

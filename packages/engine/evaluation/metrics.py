@@ -1,8 +1,8 @@
+import heapq
 import logging
 
 import numpy as np
 import pandas as pd
-from datetime import timedelta
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -56,54 +56,70 @@ def evaluate_feature_importance(name: str, model, feature_columns: list[str], to
 
 STARTING_CAPITAL: int = 1_000_000  # 1M GP
 MAX_POSITION_PCT: float = 0.10     # Max 10% of capital per trade
+MAX_ACTIVE_TRADES: int = 8         # OSRS GE trade slot limit
+GE_TAX: float = 0.02              # 2% tax on every sale
+FIVE_PERIODS: np.timedelta64 = np.timedelta64(25, 'm')  # 5 x 5-min candles
 
 
 def backtest(
     predictions: np.ndarray,
     actuals: np.ndarray,
-    prices: np.ndarray,
+    buy_prices: np.ndarray,
+    times: np.ndarray,
     item_ids: np.ndarray | None = None,
     item_names: dict[int, str] | None = None,
-    times: np.ndarray | None = None,
     trading_days: int | None = 7,
     starting_capital: int = STARTING_CAPITAL,
     max_position_pct: float = MAX_POSITION_PCT,
     buy_threshold: float = 0.002,
-    sell_threshold: float = -0.002,
 ) -> dict:
     capital = float(starting_capital)
     trades = 0
-    skipped = 0
+    skipped_unaffordable = 0
+    skipped_no_slots = 0
     equity_curve = [capital]
     item_stats: dict[int, dict] = {}
 
-    cutoff = None
-    if times is not None and trading_days is not None:
-        cutoff = times[0] + timedelta(days=trading_days)
+    cutoff = times[0] + np.timedelta64(trading_days, 'D') if trading_days is not None else None
 
-    for i, (pred, actual, price) in enumerate(zip(predictions, actuals, prices)):
-        if cutoff is not None and times[i] > cutoff:
+    # Min-heap of close times for open trade slots
+    open_slots: list[np.datetime64] = []
+
+    for i, (pred, actual, buy_price) in enumerate(zip(predictions, actuals, buy_prices)):
+        t = times[i]
+
+        if cutoff is not None and t > cutoff:
             break
-        # Determine trade direction
-        if pred > buy_threshold:
-            direction = 1
-        elif pred < sell_threshold:
-            direction = -1
-        else:
+
+        # Free any slots whose trades have now closed
+        while open_slots and open_slots[0] <= t:
+            heapq.heappop(open_slots)
+
+        # Only act on buy signals — OSRS GE does not support shorting
+        if pred <= buy_threshold:
             continue
 
-        # Size position: up to max_position_pct of current capital
+        # Block if all 8 trade slots are occupied
+        if len(open_slots) >= MAX_ACTIVE_TRADES:
+            skipped_no_slots += 1
+            continue
+
+        # Position sizing: up to max_position_pct of capital
         position_gp = capital * max_position_pct
-
-        # Skip if we can't afford even 1 unit of this item
-        if price > position_gp:
-            skipped += 1
+        if buy_price <= 0 or buy_price > position_gp:
+            skipped_unaffordable += 1
             continue
 
-        profit_gp = position_gp * actual * direction
+        quantity = int(position_gp // buy_price)
+        cost = quantity * buy_price
+        sale_value = cost * (1 + actual)
+        tax = sale_value * GE_TAX
+        profit_gp = sale_value - cost - tax
+
         capital += profit_gp
         trades += 1
         equity_curve.append(capital)
+        heapq.heappush(open_slots, t + FIVE_PERIODS)
 
         if item_ids is not None:
             item_id = int(item_ids[i])
@@ -122,7 +138,8 @@ def backtest(
         f"Backtest ({window}) — Starting: {starting_capital:,} GP | "
         f"Final: {capital:,.0f} GP | "
         f"Profit: {total_profit_gp:+,.0f} GP | "
-        f"Trades: {trades:,} | Skipped (unaffordable): {skipped:,} | "
+        f"Trades: {trades:,} | Skipped (no slot): {skipped_no_slots:,} | "
+        f"Skipped (unaffordable): {skipped_unaffordable:,} | "
         f"Max drawdown: {max_drawdown_gp:,.0f} GP"
     )
 
@@ -140,6 +157,7 @@ def backtest(
         "final_capital": capital,
         "total_profit_gp": total_profit_gp,
         "trades": trades,
-        "skipped": skipped,
+        "skipped_no_slots": skipped_no_slots,
+        "skipped_unaffordable": skipped_unaffordable,
         "max_drawdown_gp": max_drawdown_gp,
     }
