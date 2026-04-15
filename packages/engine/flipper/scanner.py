@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 # --- Tunable constants ---
 MIN_VOLUME: int = 50_000          # minimum volume_total per 5-min candle to qualify
+HIGH_VOLUME_THRESHOLD: int = 50_000  # items above this are considered high-volume (sell after 5 min)
 MAX_SPREAD_CV: float = 0.30       # max coefficient of variation of spread (lower = more stable)
 MIN_MARGIN_PCT: float = 0.01      # minimum profit margin after GE tax (1%)
 GE_TAX: float = 0.02             # 2% tax applied to sale value

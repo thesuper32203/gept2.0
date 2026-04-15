@@ -110,8 +110,9 @@ def _identify_candidates(snapshot: pd.DataFrame) -> pd.DataFrame:
     )
     df["margin_pct"] = df["profit_per_unit"] / df["recommended_bid"]
 
-    # Margin filter
-    df = df[df["margin_pct"] >= MIN_MARGIN_PCT]
+    # Margin filter: high-volume items just need positive profit; low-volume need MIN_MARGIN_PCT
+    high_vol = df["volume_total"] >= HIGH_VOLUME_THRESHOLD
+    df = df[(high_vol & (df["profit_per_unit"] > 0)) | (~high_vol & (df["margin_pct"] >= MIN_MARGIN_PCT))]
 
     return df.sort_values("margin_pct", ascending=False)
 
@@ -135,8 +136,7 @@ def run_backtest(
     df = df.sort_values("time")
 
     all_timestamps = pd.Series(df["time"].unique()).sort_values().values
-    cutoff = all_timestamps[0] + np.timedelta64(trading_days, 'D')
-    timestamps = all_timestamps[all_timestamps <= cutoff]
+    timestamps = all_timestamps
 
     price_lookup = _build_price_lookup(df)
 

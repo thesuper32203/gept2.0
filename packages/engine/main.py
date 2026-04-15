@@ -8,10 +8,18 @@ from packages.engine.flipper.backtester import run_backtest
 from packages.engine.flipper.scanner import scan
 
 
-def _load_price_data(db: DatabaseConnection) -> pd.DataFrame:
-    rows = db.execute_query(
-        "SELECT time, item_id, avg_high_price, avg_low_price, high_volume, low_volume FROM prices_5min"
-    )
+def _load_price_data(db: DatabaseConnection, trading_days: int | None = None) -> pd.DataFrame:
+    if trading_days is not None:
+        query = (
+            "SELECT time, item_id, avg_high_price, avg_low_price, high_volume, low_volume "
+            "FROM prices_5min "
+            "WHERE time >= (SELECT MIN(time) FROM prices_5min) "
+            f"AND time <= (SELECT MIN(time) FROM prices_5min) + INTERVAL '{trading_days} days'"
+        )
+    else:
+        query = "SELECT time, item_id, avg_high_price, avg_low_price, high_volume, low_volume FROM prices_5min"
+
+    rows = db.execute_query(query)
     df = pd.DataFrame(rows, columns=["time", "item_id", "avg_high_price", "avg_low_price", "high_volume", "low_volume"])
     df["time"] = pd.to_datetime(df["time"])
     df["spread"] = df["avg_high_price"] - df["avg_low_price"]
@@ -31,7 +39,7 @@ def run_scan() -> None:
     db = DatabaseConnection()
 
     logger.info("Loading price data...")
-    df = _load_price_data(db)
+    df = _load_price_data(db, trading_days=None)
 
     logger.info("Loading item names...")
     item_names = _load_item_names(db)
@@ -46,8 +54,8 @@ def run_backtest_mode(trading_days: int) -> None:
     logger.info("Connecting to database...")
     db = DatabaseConnection()
 
-    logger.info("Loading price data...")
-    df = _load_price_data(db)
+    logger.info(f"Loading {trading_days} days of price data...")
+    df = _load_price_data(db, trading_days=trading_days)
 
     logger.info("Loading item names...")
     item_names = _load_item_names(db)
