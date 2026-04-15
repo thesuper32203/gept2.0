@@ -28,6 +28,7 @@ class Trade:
     is_high_volume: bool
 
 
+
 @dataclass
 class BacktestResult:
     starting_capital: int
@@ -48,6 +49,7 @@ def _precompute_features(df: pd.DataFrame) -> pd.DataFrame:
     df["spread_rolling_mean"] = g["spread"].transform(lambda x: x.rolling(STABILITY_WINDOW).mean())
     df["spread_rolling_std"] = g["spread"].transform(lambda x: x.rolling(STABILITY_WINDOW).std())
     df["spread_cv"] = df["spread_rolling_std"] / df["spread_rolling_mean"]
+    df["spread_cv"] = df["spread_cv"].replace([np.inf, -np.inf], np.nan)
     return df
 
 
@@ -93,6 +95,9 @@ def _identify_candidates(snapshot: pd.DataFrame) -> pd.DataFrame:
     # Volume filter
     df = df[df["volume_total"] >= MIN_VOLUME]
 
+    # Drop rows with bad price data
+    df = df[(df["avg_high_price"] > 0) & (df["avg_low_price"] > 0) & (df["spread"] > 0)]
+
     # Stability filter (requires precomputed spread_cv)
     df = df.dropna(subset=["spread_cv"])
     df = df[df["spread_cv"] <= MAX_SPREAD_CV]
@@ -116,10 +121,16 @@ def _identify_candidates(snapshot: pd.DataFrame) -> pd.DataFrame:
 
     return df.sort_values("margin_pct", ascending=False)
 
+def can_buy_item(item_id: int, now: pd.Timestamp, trades: list[Trade]) -> bool:
+    for trade in trades:
+        if trade.item_id == item_id and trade.time_to_buy_again > now:
+            return False
+    return True
 
 def run_backtest(
     df: pd.DataFrame,
     item_names: dict[int, str],
+    buy_limits: dict[int, int] | None = None,
     trading_days: int = 7,
     starting_capital: int = STARTING_CAPITAL,
 ) -> BacktestResult:
@@ -144,6 +155,7 @@ def run_backtest(
     open_trades: list[Trade] = []
     equity_curve = [capital]
     item_stats: dict[int, dict] = {}
+    last_buy_time = {}
     total_trades = 0
     skipped_no_slots = 0
     skipped_unaffordable = 0
@@ -159,7 +171,7 @@ def run_backtest(
         for trade in open_trades:
             if trade.close_time <= t_stamp:
                 close_prices = _find_nearest_close_price(price_lookup, trade.item_id, trade.close_time, all_timestamps)
-                if close_prices:
+                if close_prices and not pd.isna(close_prices[0]):
                     actual_ask = close_prices[0] - 1   # sell 1 below actual high at close
                 else:
                     actual_ask = trade.buy_price        # worst case: sell at cost
@@ -192,30 +204,44 @@ def run_backtest(
             continue
 
         for _, row in candidates.iterrows():
+            item_id = int(row["item_id"])
+
+            if item_id in last_buy_time and last_buy_time[item_id] > t_stamp:
+                continue
+
+
             if len(open_trades) >= MAX_ACTIVE_TRADES:
                 break
+
 
             position_gp = capital * MAX_POSITION_PCT
             buy_price = row["recommended_bid"]
 
-            if buy_price <= 0 or buy_price > position_gp:
+            if not buy_price or pd.isna(buy_price) or buy_price <= 0 or buy_price > position_gp:
                 skipped_unaffordable += 1
                 continue
 
             quantity = int(position_gp // buy_price)
+            if buy_limits:
+                item_limit = buy_limits.get(int(row["item_id"]))
+                if item_limit:
+                    quantity = min(quantity, item_limit)
             is_high_vol = row["volume_total"] >= HIGH_VOLUME_THRESHOLD
             hold_minutes = HIGH_VOL_HOLD_MIN if is_high_vol else LOW_VOL_HOLD_MIN
             close_time = t_stamp + pd.Timedelta(minutes=hold_minutes)
 
-            open_trades.append(Trade(
-                item_id=int(row["item_id"]),
+            trade = Trade(item_id=int(row["item_id"]),
                 quantity=quantity,
                 buy_price=buy_price,
                 cost=quantity * buy_price,
                 open_time=t_stamp,
                 close_time=close_time,
                 is_high_volume=is_high_vol,
-            ))
+                )
+
+            open_trades.append(trade)
+            last_buy_time[item_id] = t_stamp + pd.Timedelta(hours=4)
+
 
     equity = np.array(equity_curve)
     peak = np.maximum.accumulate(equity)
