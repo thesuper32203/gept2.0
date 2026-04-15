@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from packages.engine.flipper.scanner import GE_TAX, HIGH_VOLUME_THRESHOLD, MAX_SPREAD_CV, MIN_MARGIN_PCT, MIN_VOLUME
+from packages.engine.flipper.scanner import GE_TAX, HIGH_VOLUME_THRESHOLD, MAX_SPREAD_CV, MIN_MARGIN_PCT, MIN_MARGIN_PCT_HIGH_VOL, MIN_VOLUME
 
 logger = logging.getLogger(__name__)
 
@@ -115,17 +115,27 @@ def _identify_candidates(snapshot: pd.DataFrame) -> pd.DataFrame:
     )
     df["margin_pct"] = df["profit_per_unit"] / df["recommended_bid"]
 
-    # Margin filter: high-volume items just need positive profit; low-volume need MIN_MARGIN_PCT
+    # Margin filter: high-volume items need 0.5% margin; low-volume need 1%
     high_vol = df["volume_total"] >= HIGH_VOLUME_THRESHOLD
-    df = df[(high_vol & (df["profit_per_unit"] > 0)) | (~high_vol & (df["margin_pct"] >= MIN_MARGIN_PCT))]
+    df = df[
+        (high_vol & (df["margin_pct"] >= MIN_MARGIN_PCT_HIGH_VOL)) |
+        (~high_vol & (df["margin_pct"] >= MIN_MARGIN_PCT))
+    ]
 
     return df.sort_values("margin_pct", ascending=False)
 
-def can_buy_item(item_id: int, now: pd.Timestamp, trades: list[Trade]) -> bool:
-    for trade in trades:
-        if trade.item_id == item_id and trade.time_to_buy_again > now:
-            return False
+BUY_LIMIT_COOLDOWN_HOURS: int = 4  # OSRS resets buy limits every 4 hours
+
+
+def _can_buy_item(item_id: int, now: pd.Timestamp, open_trades: list, cooldowns: dict) -> bool:
+    """Return False if item is already in an open slot or still in buy-limit cooldown."""
+    if any(t.item_id == item_id for t in open_trades):
+        return False
+    cooldown_expires = cooldowns.get(item_id)
+    if cooldown_expires and now < cooldown_expires:
+        return False
     return True
+
 
 def run_backtest(
     df: pd.DataFrame,
@@ -155,7 +165,7 @@ def run_backtest(
     open_trades: list[Trade] = []
     equity_curve = [capital]
     item_stats: dict[int, dict] = {}
-    last_buy_time = {}
+    buy_cooldowns: dict[int, pd.Timestamp] = {}   # item_id -> earliest time allowed to re-buy
     total_trades = 0
     skipped_no_slots = 0
     skipped_unaffordable = 0
@@ -178,15 +188,19 @@ def run_backtest(
 
                 sale_value = trade.quantity * actual_ask
                 tax = sale_value * GE_TAX
-                profit_gp = sale_value - trade.cost - tax
-                capital += profit_gp
+                # cost was already deducted at open — only return proceeds minus tax
+                capital += sale_value - tax
+                net_profit_gp = sale_value - trade.cost - tax   # for stats display only
+
+                # cooldown starts when trade closes (buy limit resets 4hr from purchase)
+                buy_cooldowns[trade.item_id] = trade.open_time + pd.Timedelta(hours=BUY_LIMIT_COOLDOWN_HOURS)
 
                 if trade.item_id not in item_stats:
                     item_stats[trade.item_id] = {"trades": 0, "net_profit_gp": 0.0}
                 item_stats[trade.item_id]["trades"] += 1
-                item_stats[trade.item_id]["net_profit_gp"] += profit_gp
+                item_stats[trade.item_id]["net_profit_gp"] += net_profit_gp
                 total_trades += 1
-                equity_curve.append(capital)
+                equity_curve.append(capital + sum(t.cost for t in still_open))  # include locked capital
             else:
                 still_open.append(trade)
         open_trades = still_open
@@ -204,43 +218,48 @@ def run_backtest(
             continue
 
         for _, row in candidates.iterrows():
-            item_id = int(row["item_id"])
-
-            if item_id in last_buy_time and last_buy_time[item_id] > t_stamp:
-                continue
-
-
             if len(open_trades) >= MAX_ACTIVE_TRADES:
+                skipped_no_slots += 1
                 break
 
+            item_id = int(row["item_id"])
 
-            position_gp = capital * MAX_POSITION_PCT
+            if not _can_buy_item(item_id, t_stamp, open_trades, buy_cooldowns):
+                continue
+
             buy_price = row["recommended_bid"]
-
-            if not buy_price or pd.isna(buy_price) or buy_price <= 0 or buy_price > position_gp:
+            if not buy_price or pd.isna(buy_price) or buy_price <= 0 or buy_price > capital:
                 skipped_unaffordable += 1
                 continue
 
+            position_gp = min(capital * MAX_POSITION_PCT, capital)
             quantity = int(position_gp // buy_price)
             if buy_limits:
-                item_limit = buy_limits.get(int(row["item_id"]))
+                item_limit = buy_limits.get(item_id)
                 if item_limit:
                     quantity = min(quantity, item_limit)
+
+            if quantity < 1:
+                skipped_unaffordable += 1
+                continue
+
+            cost = quantity * buy_price
             is_high_vol = row["volume_total"] >= HIGH_VOLUME_THRESHOLD
             hold_minutes = HIGH_VOL_HOLD_MIN if is_high_vol else LOW_VOL_HOLD_MIN
             close_time = t_stamp + pd.Timedelta(minutes=hold_minutes)
 
-            trade = Trade(item_id=int(row["item_id"]),
+            trade = Trade(
+                item_id=item_id,
                 quantity=quantity,
                 buy_price=buy_price,
-                cost=quantity * buy_price,
+                cost=cost,
                 open_time=t_stamp,
                 close_time=close_time,
                 is_high_volume=is_high_vol,
-                )
+            )
 
+            capital -= cost
             open_trades.append(trade)
-            last_buy_time[item_id] = t_stamp + pd.Timedelta(hours=4)
 
 
     equity = np.array(equity_curve)

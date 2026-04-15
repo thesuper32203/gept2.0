@@ -9,6 +9,7 @@ MIN_VOLUME: int = 100             # minimum volume_total per 5-min candle to qua
 HIGH_VOLUME_THRESHOLD: int = 5_000  # items above this are considered high-volume (sell after 5 min)
 MAX_SPREAD_CV: float = 0.80       # max coefficient of variation of spread (lower = more stable)
 MIN_MARGIN_PCT: float = 0.01      # minimum profit margin after GE tax (1%)
+MIN_MARGIN_PCT_HIGH_VOL: float = 0.005  # 0.5% minimum for high-volume items (buffer for price movement)
 GE_TAX: float = 0.02             # 2% tax applied to sale value
 TOP_N: int = 20                  # number of flip opportunities to display
 
