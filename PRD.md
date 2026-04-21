@@ -1,16 +1,17 @@
-# gept2.0 — OSRS Grand Exchange Flipping Tool with AI
+# gept2.0 — OSRS Grand Exchange Flipping Tool
 
 ## Context
 
-Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind a closed backend (you can't see or customize the model), and **GePT** has a solid open ML pipeline but focuses on medium-to-long-term predictions (1h-48h), missing the short-term window (<1h) where active flippers operate. Both lack a transparent, end-to-end pipeline that a solo developer can own and iterate on.
+Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its logic behind a closed backend (you can't see or customize it), and **GePT** focuses on medium-to-long-term predictions (1h-48h), missing the short-term window (<1h) where active flippers operate. Both lack a transparent, end-to-end pipeline that a solo developer can own and iterate on.
 
-**gept2.0** will be a ground-up OSRS GE flipping platform with a clear pipeline: **Collect → Analyze → Predict → Recommend → Display**. It focuses on two play styles: **short-term active flips (15min-1h)** and **overnight passive flips (8-48h)**. Web dashboard first, Discord bot later.
+**gept2.0** is a ground-up OSRS GE flipping platform built on a rule-based engine. The pipeline is: **Collect → Analyze → Recommend → Display**. It focuses on two play styles: **short-term active flips (15min-1h)** and **overnight passive flips (8-48h)**. Web dashboard first, Discord bot later.
+
+The rule-based approach was chosen deliberately: it is transparent (every decision is an explicit formula you can read and tune), fast to iterate (no training, no model files, no infrastructure overhead), and proven (simple margin + volume filters are what experienced flippers actually use).
 
 ### Developer Context
 - Python intermediate (comfortable with syntax, still building class/OOP skills)
-- No ML experience — every ML concept, library, and design choice will be thoroughly documented with inline comments and companion docs explaining **what** each piece does and **why** we chose it
 - No Docker experience — each phase includes step-by-step setup instructions, not just code
-- All code will be well-commented and modular so each piece can be understood independently
+- All code is well-commented and modular so each piece can be understood independently
 
 ---
 
@@ -18,11 +19,11 @@ Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Backend API** | Python + FastAPI | Best ML ecosystem, proven by GePT |
+| **Backend API** | Python + FastAPI | Clean async API, easy to learn |
 | **Database** | PostgreSQL + TimescaleDB | Time-series optimized, hypertables for price data |
-| **ML Framework** | XGBoost / LightGBM / scikit-learn | Gradient boosted models — proven best-in-class for tabular financial data, faster to train and iterate than deep learning |
-| **Task Scheduler** | APScheduler | Lightweight scheduled jobs, no Redis needed — simpler than Celery for a solo project |
-| **Frontend** | Next.js (React) | Rich dashboard, SSR for fast loads — large community for learning |
+| **Rule Engine** | Pure Python + pandas | Explicit formulas — readable, debuggable, no training required |
+| **Task Scheduler** | APScheduler | Lightweight scheduled jobs, no Redis needed |
+| **Frontend** | Next.js (React) | Rich dashboard, SSR for fast loads |
 | **Discord Bot** | discord.py | Phase 5 — deliver recommendations to Discord channels |
 | **Containerization** | Docker Compose | Orchestrate DB, collectors, API, frontend in one command |
 | **Package Manager** | Poetry (Python), pnpm (JS) | Dependency management, reproducible installs |
@@ -36,14 +37,12 @@ Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind
 ┌─────────────────────────────────────────────────┐
 │                  Docker Compose                  │
 ├──────────┬──────────┬──────────┬────────────────┤
-│Collectors│  ML       │  API     │  Frontend      │
-│(scheduled│  Engine   │ (FastAPI)│  (Next.js)     │
-│ polling) │(features +│          │                │
-│          │ GBDT     )│          │                │
+│Collectors│  Engine  │  API     │  Frontend      │
+│(scheduled│ (scanner │ (FastAPI)│  (Next.js)     │
+│ polling) │  + rules)│          │                │
 ├──────────┴──────────┴────┬─────┴────────────────┤
 │          PostgreSQL + TimescaleDB               │
 │  prices_5min | prices_1hr | items               │
-│  predictions | recommendations | users          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -51,29 +50,20 @@ Existing OSRS flipping tools have gaps: **Flipping Copilot** hides its ML behind
 
 ## Phase 0: Environment Setup (Before Any Code)
 
-**Goal:** Get your machine ready to run the project. We'll walk through every step together when you're ready to build.
+**Goal:** Get your machine ready to run the project.
 
 ### What You Need to Install (one-time)
 
 1. **Docker Desktop** — runs all our services (DB, collectors, API, frontend) in isolated containers
-   - Download from docker.com, install like any app
-   - This is the only thing that needs to be installed globally — everything else runs inside Docker
-
-2. **VS Code** — you likely already have this
-   - Extensions to add: Python, Docker, Pylance
-
-3. **Git** — for version control (saving your work history)
-   - Likely already installed; we'll initialize a repo in the project folder
+2. **VS Code** — extensions to add: Python, Docker, Pylance
+3. **Git** — for version control
 
 ### What Docker Does For You
-
-Think of Docker like a shipping container for software. Instead of installing Python, PostgreSQL, Node.js etc. directly on your Windows machine (and fighting version conflicts), Docker runs each service in its own isolated "container" — a mini virtual machine that already has everything it needs.
 
 ```
 Without Docker:               With Docker:
 Install Python ✗              docker compose up ✓
 Install PostgreSQL ✗          (everything starts automatically)
-Install Node.js ✗
 Configure each to talk ✗
 Fight version conflicts ✗
 ```
@@ -82,28 +72,19 @@ Fight version conflicts ✗
 - [ ] Install Docker Desktop
 - [ ] Create `gept2.0/` folder structure
 - [ ] Initialize git repo (`git init`)
-- [ ] Create `docker-compose.yml` (defines all services)
-- [ ] Create `.env` file (database passwords, API keys — never committed to git)
+- [ ] Create `docker-compose.yml`
+- [ ] Create `.env` file (database password, User-Agent — never committed to git)
 - [ ] Create `packages/` subfolders
 - [ ] Verify Docker is working: `docker compose up db` starts the database
 
 ### How You'll Run the Project Day-to-Day
 
 ```bash
-# Start everything
-docker compose up
-
-# Start just the database (useful early on)
-docker compose up db
-
-# Stop everything
-docker compose down
-
-# See logs from a specific service
-docker compose logs -f collector
+docker compose up          # Start everything
+docker compose up db       # Start just the database
+docker compose down        # Stop everything
+docker compose logs -f collector  # See logs from a specific service
 ```
-
-You won't need to memorize these — we'll set up a simple script and walk through each command when we get there.
 
 ---
 
@@ -112,13 +93,13 @@ You won't need to memorize these — we'll set up a simple script and walk throu
 **Goal:** Reliable, continuous OSRS GE price data collection and storage.
 
 ### Tasks
-1. **Initialize project** — monorepo structure, Docker Compose, Poetry/pnpm setup
+1. **Initialize project** — monorepo structure, Docker Compose, Poetry setup
 2. **Database schema** — TimescaleDB hypertables for multi-resolution price data
 3. **OSRS Wiki API collectors** — 2 polling services:
-   - `collector_5min` — 5-min OHLC every 300s (primary ML data)
-   - `collector_1hr` — 1-hour averages every 3600s
+   - `prices_5min` — 5-min OHLC every 300s (primary scanner data)
+   - `prices_1hr` — 1-hour averages every 3600s
 4. **Item metadata** — fetch and cache item names, buy limits, members status
-5. **Backfill script** — pull historical data to bootstrap ML training
+5. **Backfill script** — pull historical data (last 90 days) for backtesting
 6. **Health monitoring** — circuit breaker, retry logic, collection gap detection
 
 ### Key Data Source
@@ -130,353 +111,265 @@ You won't need to memorize these — we'll set up a simple script and walk throu
 
 ### Database Tables
 ```sql
--- TimescaleDB hypertable (auto-partitions by time for fast queries)
 CREATE TABLE prices_5min (
     time        TIMESTAMPTZ NOT NULL,
     item_id     INT NOT NULL,
-    avg_high    BIGINT,     -- avg instant-buy price (what buyers pay)
-    avg_low     BIGINT,     -- avg instant-sell price (what sellers receive)
-    high_vol    INT,        -- number of items bought at high price
-    low_vol     INT         -- number of items sold at low price
+    avg_high    BIGINT,
+    avg_low     BIGINT,
+    high_vol    INT,
+    low_vol     INT
 );
 SELECT create_hypertable('prices_5min', 'time');
 -- Same structure for prices_1hr
 ```
 
-### Borrow from GePT
-- Circuit breaker pattern with exponential backoff
-- Multi-resolution collection strategy (5min/1hr)
-- TimescaleDB hypertables
-- Timeseries endpoint for historical backfill
-
-### Project Structure (full project — built incrementally)
+### Project Structure (Phase 1)
 ```
 gept2.0/
 ├── PRD.md
 ├── docker-compose.yml
-├── docs/                       # Companion documentation
-│   ├── setup-guide.md          # How to run the project
-│   ├── data-pipeline.md        # How data collection works and why
-│   ├── ml-explained.md         # ML concepts in plain language
-│   ├── recommendation-logic.md # How flips are scored and ranked
-│   └── api-reference.md        # API endpoint docs
+├── docs/
+│   ├── phase1/                 # Step-by-step Phase 1 guides
+│   └── phase2/                 # Rule-based scanner guide
 ├── packages/
-│   ├── collector/              # Phase 1 — data collection
+│   ├── collector/
 │   │   ├── collectors/
-│   │   │   ├── prices_5min.py  # Polls /5m endpoint every 300s
-│   │   │   ├── prices_1hr.py   # Polls /1h endpoint every 3600s
-│   │   │   └── items.py        # Item metadata sync (/mapping)
+│   │   │   ├── base.py
+│   │   │   ├── prices_5min.py
+│   │   │   ├── prices_1hr.py
+│   │   │   └── items.py
 │   │   ├── db/
-│   │   │   ├── schema.sql      # TimescaleDB tables
-│   │   │   └── connection.py   # DB connection helper
-│   │   └── backfill.py         # Pull historical data
-│   ├── engine/                 # Phase 2-3 — ML + recommendations
-│   │   ├── features/           # Feature computation (per-item engineering)
-│   │   ├── models/             # XGBoost, LightGBM, RF, LogReg
-│   │   ├── training/           # Training pipeline + model comparison
-│   │   ├── evaluation/         # Metrics, calibration, backtesting
-│   │   ├── inference/          # Prediction service (runs every 5min)
-│   │   └── recommendations/    # Scoring + filtering
-│   ├── api/                    # Phase 3 — FastAPI backend
-│   ├── web/                    # Phase 4 — Next.js dashboard
-│   └── bot/                    # Phase 5 — Discord bot
+│   │   │   ├── schema.sql
+│   │   │   └── connection.py
+│   │   └── backfill.py
+│   └── engine/                 # Phase 2 — rule-based scanner
 ├── pyproject.toml
 └── README.md
 ```
 
 ---
 
-## Phase 2: Feature Engineering & ML Model (Week 3-5)
+## Phase 2: Rule-Based Flip Scanner (Week 3-4)
 
-**Goal:** Build a feature-engineered ML pipeline that predicts short-term price movement and order fill probability for OSRS Grand Exchange items. Every step documented so you understand what the model does and why.
+**Goal:** A scanner that runs every 5 minutes, reads the latest price snapshot, and surfaces the best flipping opportunities using explicit, tunable rules.
 
-**Why gradient boosted models instead of transformers?** For tabular financial data with engineered features, gradient boosted decision trees (XGBoost, LightGBM) consistently outperform deep learning approaches. They train faster, require less data, are easier to debug, and produce interpretable feature importances. GePT proved transformers can work for OSRS data, but we can achieve equal or better results with a simpler, more maintainable approach.
+### Why Rule-Based (Not ML)?
 
-### 2A: Feature Engine (Week 3)
+Rule-based means every decision is a formula you can read, understand, and tune. There are no model files to train, no data pipelines to maintain, and no black-box outputs to debug.
 
-All features are computed **per item_id** — always group by item_id and sort by timestamp before computing lag or rolling features. The dataset contains ~4,000 tradable items with millions of rows.
+For OSRS flipping specifically, the signal is already clear: **margin (spread) is profit**. The challenge is filtering out noise — items with unstable spreads, low volume, or margins that disappear after GE tax. Rules handle this directly.
 
-**Raw fields from database:**
-- `item_id`, `timestamp`, `avg_high_price`, `avg_low_price`, `high_volume`, `low_volume`
+### 2A: Feature Computation
 
-#### Base Derived Variables
+Compute derived signals from raw price snapshots before applying rules.
+
+**File:** `packages/engine/features/builder.py`
+
+#### Base Features
 
 | Feature | Formula | Why it matters |
 |---------|---------|----------------|
-| `mid_price` | `(avg_high_price + avg_low_price) / 2` | Central reference price for all calculations |
-| `spread` | `avg_high_price - avg_low_price` | The fundamental flip margin |
-| `volume_total` | `high_volume + low_volume` | Total trading activity |
-| `spread_pct` | `spread / mid_price` | Normalized spread — comparable across items of different price |
-| `volume_imbalance` | `(high_volume - low_volume) / volume_total` | Buy/sell pressure — imbalance signals demand shifts |
+| `mid_price` | `(avg_high + avg_low) / 2` | Central reference price |
+| `spread` | `avg_high - avg_low` | The raw flip margin (gross profit per unit) |
+| `volume_total` | `high_vol + low_vol` | Total trading activity — proxy for liquidity |
+| `spread_pct` | `spread / mid_price` | Normalized margin — comparable across different-priced items |
+| `volume_imbalance` | `(high_vol - low_vol) / volume_total` | Buy/sell pressure — imbalance signals demand shifts |
 
-#### Lag Features
+#### Lag Features (Recent History)
 
-Capture recent state at specific lookback points:
+Always `groupby("item_id")` before shifting — without this, item A's price bleeds into item B's lag:
 
-| Feature | Description |
-|---------|-------------|
-| `price_lag1` through `price_lag20` | `mid_price` at t-1, t-5, t-10, t-20 |
-| `volume_lag1`, `volume_lag5` | `volume_total` at t-1, t-5 |
-| `spread_lag1`, `spread_lag5` | `spread` at t-1, t-5 |
+```python
+df["price_lag1"] = df.groupby("item_id")["mid_price"].shift(1)
+df["return_1"] = (df["mid_price"] - df["price_lag1"]) / df["price_lag1"]
+```
 
-#### Return Features (Momentum)
+Compute lags at t-1, t-5, t-10, t-20 for price; t-1, t-5 for volume and spread.
 
-How much price changed over recent windows — captures momentum and mean reversion:
+#### Rolling Features (Trend & Volatility)
 
-| Feature | Formula |
-|---------|---------|
-| `return_1` | `(mid_price - price_lag1) / price_lag1` |
-| `return_5` | `(mid_price - price_lag5) / price_lag5` |
-| `return_10` | `(mid_price - price_lag10) / price_lag10` |
-| `return_20` | `(mid_price - price_lag20) / price_lag20` |
+```python
+df["ma_20"] = df.groupby("item_id")["mid_price"].transform(
+    lambda x: x.rolling(20).mean()
+)
+```
 
-#### Moving Averages & Trend Signals
+Key rolling signals:
+- `ma_5`, `ma_20` — short and medium-term moving averages
+- `spread_cv` — coefficient of variation of spread (`spread_std / spread_mean`) — measures spread stability
+- `volume_ma20` — baseline volume level
 
-| Feature | Formula | Purpose |
-|---------|---------|---------|
-| `ma_5`, `ma_20`, `ma_60` | Rolling mean of `mid_price` | Smoothed trend at different time scales |
-| `price_vs_ma5` | `mid_price / ma_5` | Is price above or below short-term average? |
-| `price_vs_ma20` | `mid_price / ma_20` | Is price above or below medium-term average? |
-| `ma5_vs_ma20` | `ma_5 / ma_20` | Crossover signal — short trend vs medium trend |
+### 2B: Rule-Based Scanner
 
-#### Volatility Features
+**File:** `packages/engine/flipper/scanner.py`
 
-How much price bounces around — high volatility = more opportunity but more risk:
+The scanner applies a series of explicit filters to the latest price snapshot, then ranks survivors by margin.
 
-| Feature | Formula |
-|---------|---------|
-| `volatility_5` | `rolling_std(return_1, 5)` |
-| `volatility_20` | `rolling_std(return_1, 20)` |
-| `volatility_60` | `rolling_std(return_1, 60)` |
+#### Constants (all tunable)
 
-#### Volume Features
+```python
+MIN_VOLUME = 100            # Items trading fewer than this per 5min are illiquid
+HIGH_VOLUME_THRESHOLD = 5000  # High-volume items get stricter margin requirements
+MAX_SPREAD_CV = 0.80        # Reject items where spread bounces around too much
+MIN_MARGIN_PCT = 0.01       # Minimum 1% net margin after tax (high-vol items)
+GE_TAX = 0.02               # 2% tax on the sell side, capped at 5M GP
+TOP_N = 20                  # Show top N results
+```
 
-| Feature | Formula | Purpose |
-|---------|---------|---------|
-| `volume_ma5`, `volume_ma20` | Rolling mean of `volume_total` | Baseline trading activity |
-| `volume_ratio_5` | `volume_total / volume_ma5` | Short-term volume spike detection |
-| `volume_ratio_20` | `volume_total / volume_ma20` | Medium-term volume spike detection |
-| `volume_spike` | `volume_total / volume_ma20` | Abnormal volume flag |
-| `imbalance_change` | `volume_imbalance - volume_imbalance(t-1)` | Shift in buy/sell pressure |
+#### Filter Pipeline
 
-#### Spread Features
+**Step 1 — Volume filter:** Drop items with insufficient trading activity.
+```
+volume_total >= MIN_VOLUME
+```
+Items with low volume are risky — your offer might sit for hours.
 
-| Feature | Formula |
-|---------|---------|
-| `spread_pct` | `spread / mid_price` |
-| `spread_ma5`, `spread_ma20` | Rolling mean of `spread` |
-| `spread_change` | `spread - spread_lag1` |
+**Step 2 — Stability filter:** Drop items where the spread jumps around unpredictably.
+```
+spread_cv <= MAX_SPREAD_CV
+```
+A high coefficient of variation means the margin you see now may not be there when your buy order fills.
 
-#### Breakout Features
+**Step 3 — Margin calculation:** Compute real profit after GE tax.
+```
+tax = floor(avg_high * GE_TAX)        # Tax is on the sell price
+profit_per_unit = spread - tax
+margin_pct = profit_per_unit / avg_high
+```
 
-| Feature | Formula | Purpose |
-|---------|---------|---------|
-| `rolling_max_20` | `rolling_max(mid_price, 20)` | Recent price ceiling |
-| `rolling_min_20` | `rolling_min(mid_price, 20)` | Recent price floor |
-| `price_vs_max20` | `mid_price / rolling_max_20` | How close to recent high? |
-| `price_vs_min20` | `mid_price / rolling_min_20` | How close to recent low? |
+**Step 4 — Margin filter:** Require minimum net margin.
+- High-volume items (>= HIGH_VOLUME_THRESHOLD): require `MIN_MARGIN_PCT` (stricter — high competition)
+- Low-volume items: require `MIN_MARGIN_PCT / 2` (looser — less competition)
 
-#### Time Features
+**Step 5 — Rank and return top N** sorted by `margin_pct` descending.
 
-Extract from timestamp and encode cyclically so the model understands that hour 23 is close to hour 0:
+#### Output per item
 
-| Feature | Formula |
-|---------|---------|
-| `hour`, `day_of_week`, `is_weekend` | Direct extraction from timestamp |
-| `hour_sin`, `hour_cos` | `sin(2π * hour / 24)`, `cos(2π * hour / 24)` |
-| `dow_sin`, `dow_cos` | `sin(2π * day_of_week / 7)`, `cos(2π * day_of_week / 7)` |
+| Field | Description |
+|-------|-------------|
+| `item_id` | Item identifier |
+| `recommended_bid` | `avg_low - 1` (undercut current buy orders) |
+| `recommended_ask` | `avg_high + 1` (overprice current sell orders) |
+| `profit_per_unit` | GP per unit after tax |
+| `margin_pct` | Net margin as a percentage |
+| `volume_total` | How actively this item trades |
+| `spread_cv` | How stable the spread is (lower = more reliable) |
 
-#### Item-Level Features
+### 2C: Backtester
 
-Computed once per item — help the model understand liquidity and volatility differences between items:
+**File:** `packages/engine/flipper/backtester.py`
 
-| Feature | Description |
-|---------|-------------|
-| `item_avg_volume` | Mean `volume_total` for this item |
-| `item_avg_spread` | Mean `spread` for this item |
-| `item_volatility` | Std dev of `return_1` for this item |
-| `item_avg_price` | Mean `mid_price` for this item |
+Validates the scanner against historical data before trusting it with real GP.
 
-### 2B: ML Models (Week 4)
+#### Simulation Logic
 
-**System goal:** Predict two things per item per timestep:
-1. **Short-term price movement** — `future_return_5 = (mid_price(t+5) - mid_price) / mid_price`
-2. **Order fill probability** — will an order placed at a given price fill within a short window?
+For each 5-minute snapshot in historical data:
+1. Run the scanner to find flip candidates
+2. For each candidate, simulate buying at `recommended_bid` (up to buy limit)
+3. Simulate selling at `recommended_ask` in a future snapshot
+4. Track capital, profit, and open positions
 
-#### Target Variables
+#### Key Constraints
 
-| Target | Type | Definition |
-|--------|------|------------|
-| `future_return_5` | Regression | % price change over next 5 periods |
-| `target_up` | Classification | `1` if `future_return_5 > threshold` |
-| `target_fill` | Classification | `1` if future low price within window ≤ order price |
+| Constraint | Why |
+|-----------|-----|
+| GE buy limit | Each item has a buy limit per 4 hours — must be respected |
+| 4-hour cooldown | After hitting buy limit, cannot buy again until cooldown expires |
+| Capital tracking | Cannot buy more than available GP |
+| Tax on every sell | 2% tax deducted from every sale, capped at 5M GP |
 
-#### Models to Train & Compare
+#### Metrics to Track
 
-| Model | Library | Purpose |
-|-------|---------|---------|
-| **XGBoost** | `xgboost` | Primary candidate — best on structured tabular data |
-| **LightGBM** | `lightgbm` | Faster training, handles large datasets well |
-| **Random Forest** | `scikit-learn` | Simpler ensemble baseline |
-| **Logistic Regression** | `scikit-learn` | Linear baseline — if this wins, features need work |
-
-The best-performing model on validation + backtesting becomes the production model.
-
-### 2C: Training Pipeline (Week 4-5)
-
-1. Load raw data from database
-2. Sort by `item_id` and `timestamp`
-3. Generate all features per item
-4. Drop rows with missing lag values (first N rows per item)
-5. Time-based split — **no random shuffling** (would leak future data):
-   - 70% train
-   - 15% validation
-   - 15% test
-6. Train all 4 models, log metrics for comparison
-7. Select best model
-
-### 2D: Evaluation Metrics
-
-| Metric | Target | What it tells you |
-|--------|--------|-------------------|
-| **Directional accuracy** | >55% | Does the model predict up/down correctly? |
-| **MAE / RMSE** | Lower is better | How far off are regression predictions? |
-| **Precision / Recall / F1** | Balanced | How good are classification predictions? |
-| **ROC-AUC** | >0.6 | How well does the model separate positive/negative? |
-| **Calibration** | Predicted probs ≈ actual rates | Are probability outputs trustworthy? |
-
-### 2E: Profit Backtesting
-
-Verify the model has real economic value with a simple backtest:
-
-- If predicted return > threshold → **buy**
-- If predicted return < negative threshold → **sell**
-
-Track:
 - Total profit (GP)
-- Sharpe-like return (risk-adjusted)
-- Maximum drawdown (worst losing streak)
+- Number of completed flips
+- Win rate (% of flips that were profitable)
+- Maximum drawdown (worst losing streak in capital terms)
+- Average time to fill (how long positions stayed open)
 
-### 2F: Inference Service
+### 2D: Running the Engine
 
-Runs every 5 minutes:
+```bash
+# Run scanner once (see current recommendations)
+python -m packages.engine.main --mode scan
 
-1. Pull latest market data from database
-2. Compute features using latest window
-3. Run model predictions for all ~4,000 items
-4. Store predictions in database:
-   - `item_id`, `timestamp`, `predicted_return`, `predicted_fill_probability`
-
-These predictions power the recommendation engine in Phase 3.
-
-### Key Advantages Over Transformer Approach
-- **Faster iteration** — train in minutes, not hours
-- **Interpretable** — feature importance tells you exactly what drives predictions
-- **Proven on tabular data** — gradient boosted models consistently win Kaggle competitions on structured financial data
-- **Simpler infrastructure** — no GPU required, runs on CPU
-- **Easier debugging** — inspect individual features, not hidden attention weights
-
-### Companion Doc: `docs/ml-explained.md`
-Will contain: what is gradient boosting, how XGBoost works, what feature importance means, how to interpret predictions — all in plain language with OSRS examples
+# Run backtest over historical data
+python -m packages.engine.main --mode backtest --days 14
+```
 
 ---
 
-## Phase 3: Recommendation Engine + API (Week 5-7)
+## Phase 3: API (Week 5-6)
 
-**Goal:** Turn predictions into actionable flip recommendations served via API.
+**Goal:** Serve scanner results via a FastAPI backend.
 
-### Tasks
-1. **Recommendation engine** — scoring and filtering:
-   - **Profit calc**: `profit = (sell - buy) * qty - tax` where `tax = floor(sell * 0.02)` capped at 5M
-   - **EV calc**: `expected_profit = profit * fill_probability`
-   - **ROI**: `roi = expected_profit / capital_required`
-   - **Score**: weighted combo of ROI, confidence, fill probability, time-to-fill
-2. **User constraint filtering**:
-   - Available capital (GP budget)
-   - Play style: Active (<1h flips), Hybrid (1-8h), Passive (8-48h)
-   - Risk tolerance: Conservative / Balanced / Aggressive
-   - Item blacklist/whitelist
-3. **Capital allocation** — spread GP across multiple items, don't put all eggs in one basket
-4. **FastAPI endpoints**:
-   - `GET /api/recommendations` — filtered, scored flip suggestions
-   - `GET /api/predictions/{item_id}` — raw predictions for an item
-   - `GET /api/items` — searchable item list
-   - `GET /api/history/{item_id}` — price history + prediction overlay
-   - `GET /api/portfolio` — tracked flips and P&L
-5. **Fill probability model** — estimate likelihood a GE offer fills at a given price/time
+### Endpoints
 
-### Borrow from GePT
-- Recommendation filtering by capital/style/risk
-- EV-adjusted profit calculation
-- Fill probability concept (now a dedicated classification model)
-- Confidence tiers (High/Medium/Low) — derived from model prediction confidence
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/recommendations` | Top flip recommendations from the latest scan |
+| `GET /api/items` | Searchable item list |
+| `GET /api/history/{item_id}` | Price history for an item |
+| `GET /api/portfolio` | Tracked flips and P&L |
 
-### Borrow from Flipping Copilot
-- Flip lifecycle tracking (buy → waiting → sell → complete)
-- Portfolio ROI calculation
+### Recommendation Scoring
+
+Each recommendation includes:
+- **Profit calc**: `profit = (sell - buy) * qty - tax`
+- **ROI**: `roi = profit / capital_required`
+- **Capital required**: `recommended_bid * buy_limit`
+
+### User Constraint Filtering
+
+- Available capital (GP budget)
+- Play style: Active (<1h flips), Passive (8-48h)
+- Item blacklist/whitelist
 
 ---
 
-## Phase 4: Web Dashboard (Week 7-9)
+## Phase 4: Web Dashboard (Week 6-8)
 
 **Goal:** User-facing dashboard to view recommendations and track performance.
 
-### Tasks
-1. **Dashboard page** — top flip recommendations with filters
-   - Card per recommendation: item, buy/sell price, expected profit, confidence, horizon
-   - Filter controls: capital, style, risk
-   - Sort by: ROI, profit, confidence, time
-2. **Item detail page** — price chart with prediction overlay
-   - Historical price chart (candlestick)
-   - ML prediction bands (quantile ranges)
-   - Volume bars
-   - Key stats: spread, volatility, avg daily volume
-3. **Portfolio tracker** — log flips, track P&L
-   - Manual entry or import
-   - Running total profit, ROI, win rate
-4. **Settings** — user preferences, notification config
-5. **Auth** — simple JWT auth (Discord OAuth optional later)
+### Pages
 
-### Tech Details
+1. **Dashboard** — top flip recommendations with filter controls
+   - Card per item: buy/sell price, profit per unit, margin %, volume
+   - Filter by capital, item type, play style
+2. **Item detail** — price chart, spread history, volume bars
+3. **Portfolio tracker** — log flips, track P&L, running win rate
+
+### Tech
 - Next.js App Router
-- Recharts or Lightweight Charts for price visualization
+- Recharts for price visualization
 - TanStack Query for data fetching
-- Tailwind CSS for styling
+- Tailwind CSS
 
 ---
 
-## Phase 5: Discord Bot & Extensions (Week 9+)
+## Phase 5: Discord Bot (Week 8+)
 
-**Goal:** Deliver recommendations via Discord — the ultimate target platform.
+**Goal:** Deliver recommendations via Discord.
 
-### Tasks
-1. **Discord bot** (discord.py):
-   - `/flips` — get top recommendations with filters (capital, style)
-   - `/track <item>` — watch an item, get alerts on price movement
-   - `/portfolio` — see your tracked flips and P&L
-   - Scheduled alerts: "Your overnight flip on Cannonballs is ready to sell"
-   - Embed-style messages with item images, price charts
-2. **Notification system** — price alerts, flip completion estimates
-3. **Model retraining pipeline** — automated with new data on a schedule
-4. **Backtesting framework** — evaluate strategy changes before going live
+### Commands
+- `/flips` — top recommendations with capital filter
+- `/track <item>` — watch an item for price alerts
+- `/portfolio` — your tracked flips and P&L
 
 ---
 
 ## Verification Plan
 
-1. **Phase 1**: Query DB to confirm prices are being collected continuously. Check for gaps. Compare against Wiki API directly.
-2. **Phase 2**: Run model evaluation — check directional accuracy >55%, calibration (predicted probabilities match actual rates), backtest profit > baseline (buy-low-sell-high without ML), and feature importance makes intuitive sense.
-3. **Phase 3**: Hit API endpoints, verify recommendations make sense (positive EV, reasonable prices, correct tax calc).
-4. **Phase 4**: Load dashboard, filter recommendations, check charts render correctly, verify portfolio tracking math.
+1. **Phase 1**: Query DB — confirm prices collecting continuously, no gaps, matches Wiki API directly.
+2. **Phase 2**: Run backtest — confirm positive GP over 14 days, verify no tax/cooldown accounting bugs, review top 20 recommendations manually for sanity.
+3. **Phase 3**: Hit API endpoints — verify recommendations match scanner output, capital filtering works.
+4. **Phase 4**: Load dashboard — filter recommendations, check charts render, verify portfolio math.
 
 ---
 
 ## What Makes gept2.0 Different
 
-1. **Short-term predictions** — 5-period ahead price movement and fill probability
-2. **Transparent ML** — you own the model, can inspect feature importances and understand why it predicts what it does
-3. **Feature-engineered approach** — 50+ carefully designed features covering momentum, volatility, volume, spread, breakouts, and time patterns
-4. **Proven architecture** — gradient boosted models (XGBoost/LightGBM) are the gold standard for tabular financial data
-5. **Modern web UI** — not locked into RuneLite, accessible from any device
-6. **Ground-up pipeline** — every step from data collection to display is yours to control
-7. **No GPU required** — trains on CPU in minutes, not hours
+1. **Transparent logic** — every filter and formula is readable code you control
+2. **Correct economics** — GE tax, buy limits, and cooldowns all modeled accurately
+3. **Backtested** — validated against real historical data before trusting with GP
+4. **Modern web UI** — accessible from any device, not locked into RuneLite
+5. **Ground-up pipeline** — every step from data collection to display is yours to own and extend

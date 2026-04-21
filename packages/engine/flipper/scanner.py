@@ -14,7 +14,7 @@ GE_TAX: float = 0.02             # 2% tax applied to sale value
 TOP_N: int = 20                  # number of flip opportunities to display
 
 
-def _filter_volume(df: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:
+def _filter_volume(latest: pd.DataFrame) -> pd.DataFrame:
     """Keep only items whose most recent 5-min candle meets the volume threshold."""
     return latest[latest["volume_total"] >= MIN_VOLUME]
 
@@ -80,7 +80,7 @@ def scan(df: pd.DataFrame, item_names: dict[int, str]) -> pd.DataFrame:
         .reset_index()
     )
 
-    latest = _filter_volume(df, latest)
+    latest = _filter_volume(latest)
     latest = _filter_stability(df, latest)
     latest = _compute_recommendations(latest)
 

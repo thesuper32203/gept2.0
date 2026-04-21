@@ -70,7 +70,18 @@ def run_backtest_mode(trading_days: int) -> None:
 
     run_backtest(df, item_names, buy_limits=buy_limits, trading_days=trading_days)
 
+def normal_scanning() -> None:
+    logger = logging.getLogger(__name__)
+    logger.info("Connecting to database...")
+    db = DatabaseConnection()
 
+    logger.info("Loading item names...")
+    item_names = _load_item_names(db)
+
+    logger.info("Loading buy limits...")
+    buy_limits = _load_buy_limits(db)
+
+    print(item_names)
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
@@ -86,4 +97,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    normal_scanning()

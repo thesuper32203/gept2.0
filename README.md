@@ -1,6 +1,6 @@
-# GEPT 2.0 — OSRS Grand Exchange Price Tracker
+# GEPT 2.0 — OSRS Grand Exchange Flip Scanner
 
-Collects real-time and historical price data from the Old School RuneScape Wiki API and stores it in a TimescaleDB database.
+Collects real-time and historical price data from the Old School RuneScape Wiki API, stores it in a TimescaleDB database, and surfaces profitable flip opportunities using a rule-based scanner.
 
 ---
 
@@ -106,20 +106,40 @@ The database persists between restarts unless `-v` was used.
 ```
 gept2.0/
 ├── packages/
-│   └── collector/
-│       ├── main.py                  # Entry point
-│       ├── collectors/
-│       │   ├── base.py              # Shared collection logic
-│       │   ├── items.py             # Item metadata collector
-│       │   ├── prices_5min.py       # 5-minute price collector
-│       │   ├── prices_1hr.py        # 1-hour price collector
-│       │   └── backfill.py          # Historical data backfill
-│       └── db/
-│           ├── connection.py        # Database connection pool
-│           └── schema.sql           # Table definitions
+│   ├── collector/
+│   │   ├── main.py                  # Entry point
+│   │   ├── collectors/
+│   │   │   ├── base.py              # Shared collection logic
+│   │   │   ├── items.py             # Item metadata collector
+│   │   │   ├── prices_5min.py       # 5-minute price collector
+│   │   │   ├── prices_1hr.py        # 1-hour price collector
+│   │   │   └── backfill.py          # Historical data backfill
+│   │   └── db/
+│   │       ├── connection.py        # Database connection pool
+│   │       └── schema.sql           # Table definitions
+│   └── engine/
+│       ├── main.py                  # CLI entry point (--mode scan | --mode backtest)
+│       ├── features/
+│       │   └── builder.py           # Feature computation (spread, volume, rolling signals)
+│       └── flipper/
+│           ├── scanner.py           # Rule-based flip opportunity scanner
+│           └── backtester.py        # Historical simulation and validation
+├── docs/
+│   ├── phase1/                      # Step-by-step Phase 1 guides
+│   └── phase2/                      # Rule-based scanner build guide
 ├── Dockerfile
 ├── docker-compose.yml
 └── .env                             # Your credentials (not committed)
+```
+
+## Running the scanner
+
+```bash
+# See current flip opportunities
+python -m packages.engine.main --mode scan
+
+# Validate scanner against 14 days of historical data
+python -m packages.engine.main --mode backtest --days 14
 ```
 
 ---
