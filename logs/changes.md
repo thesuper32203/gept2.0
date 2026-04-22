@@ -16,6 +16,13 @@ Track every significant structural change, new feature, or architectural decisio
 
 <!-- Entries added below as changes are made -->
 
+### [2026-04-19 EST] — Removed ML pipeline, shifted to rule-based engine
+- **What changed**: Removed all ML code from `packages/engine/features/builder.py` (sklearn, xgboost, lightgbm, joblib imports; model instantiations; `target_features`, `train`, `test` functions). Rewrote PRD.md to remove Phases 2B-2F (ML models, training pipeline, evaluation, inference service) and replace with rule-based scanner docs. Rewrote `docs/phase2/README.md` as a build guide for the rule-based scanner and backtester. Updated README.md title, project structure, and added scanner run instructions.
+- **Why**: Simplifying to rule-based approach — transparent (every decision is a readable formula), no training infrastructure needed, faster to iterate
+- **Files affected**: packages/engine/features/builder.py, PRD.md, docs/phase2/README.md, README.md
+- **PRD updated**: yes
+- **CLAUDE.md updated**: no
+
 ### [2026-04-12 08:15 PM EST] — Docker deployment fixes for full containerized operation
 - **What changed**: Switched collector DB_HOST from `host.docker.internal:6543` to `db:5432` for Docker-internal networking. Added `PYTHONUNBUFFERED=1` to fix silent log buffering. Added `IF NOT EXISTS` to schema index creation. Resolved stale container name conflicts.
 - **Why**: Collector was configured to talk to host machine DB instead of the containerized TimescaleDB; Python stdout buffering made Docker logs appear frozen

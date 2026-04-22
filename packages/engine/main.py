@@ -1,95 +1,88 @@
 import argparse
 import logging
 
-import joblib
+import pandas as pd
 
 from packages.collector.db.connection import DatabaseConnection
-from packages.engine.evaluation.metrics import backtest
-from packages.engine.features.builder import (
-    FEATURE_COLUMNS,
-    MODELS_DIR,
-    TARGET_REGRESSION,
-    add_base_features,
-    add_lag_features,
-    clean,
-    load_raw_data,
-    rolling_features,
-    target_features,
-    time_features,
-    train,
-)
+from packages.engine.flipper.backtester import run_backtest
+from packages.engine.flipper.scanner import scan
 
 
-def _build_features(logger: logging.Logger) -> object:
-    logger.info("Loading data from database...")
-    db = DatabaseConnection()
-    df = load_raw_data(db)
+def _load_price_data(db: DatabaseConnection, trading_days: int | None = None) -> pd.DataFrame:
+    if trading_days is not None:
+        query = (
+            "SELECT time, item_id, avg_high_price, avg_low_price, high_volume, low_volume "
+            "FROM prices_5min "
+            "WHERE time >= (SELECT MIN(time) FROM prices_5min) "
+            f"AND time <= (SELECT MIN(time) FROM prices_5min) + INTERVAL '{trading_days} days'"
+        )
+    else:
+        query = "SELECT time, item_id, avg_high_price, avg_low_price, high_volume, low_volume FROM prices_5min"
 
-    logger.info("Building features...")
-    df = add_base_features(df)
-    df = add_lag_features(df)
-    df = rolling_features(df)
-    df = time_features(df)
-    df = target_features(df)
-    df = clean(df)
-    logger.info(f"Dataset: {len(df):,} rows, {len(df.columns)} columns")
+    rows = db.execute_query(query)
+    df = pd.DataFrame(rows, columns=["time", "item_id", "avg_high_price", "avg_low_price", "high_volume", "low_volume"])
+    df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_convert(None)
+    df["spread"] = df["avg_high_price"] - df["avg_low_price"]
+    df["volume_total"] = df["high_volume"] + df["low_volume"]
     return df
 
 
-def run_train() -> None:
+def _load_item_names(db: DatabaseConnection) -> dict[int, str]:
+    rows = db.execute_query("SELECT item_id, name FROM items")
+    return {row[0]: row[1] for row in rows}
+
+
+def _load_buy_limits(db: DatabaseConnection) -> dict[int, int]:
+    rows = db.execute_query("SELECT item_id, buy_limit FROM items WHERE buy_limit IS NOT NULL")
+    return {row[0]: row[1] for row in rows}
+
+
+def run_scan() -> None:
     logger = logging.getLogger(__name__)
-    df = _build_features(logger)
-    logger.info("Training models...")
-    train(df)
+
+    logger.info("Connecting to database...")
+    db = DatabaseConnection()
+
+    logger.info("Loading price data...")
+    df = _load_price_data(db, trading_days=None)
+
+    logger.info("Loading item names...")
+    item_names = _load_item_names(db)
+
+    logger.info("Scanning for flip opportunities...")
+    scan(df, item_names)
 
 
-def run_backtest(trading_days: int) -> None:
+def run_backtest_mode(trading_days: int) -> None:
     logger = logging.getLogger(__name__)
 
-    model_path = MODELS_DIR / "best_model.pkl"
-    if not model_path.exists():
-        raise FileNotFoundError(f"No trained model found at {model_path}. Run --mode train first.")
+    logger.info("Connecting to database...")
+    db = DatabaseConnection()
 
-    model = joblib.load(model_path)
-    logger.info(f"Loaded model from {model_path}")
+    logger.info(f"Loading {trading_days} days of price data...")
+    df = _load_price_data(db, trading_days=trading_days)
 
-    df = _build_features(logger)
-    df = df.sort_values("time")
+    logger.info("Loading item names...")
+    item_names = _load_item_names(db)
 
-    n = len(df)
-    test_df = df.iloc[int(n * 0.85):]
+    logger.info("Loading buy limits...")
+    buy_limits = _load_buy_limits(db)
 
-    item_names_rows = DatabaseConnection().execute_query("SELECT item_id, name FROM items")
-    item_names = {row[0]: row[1] for row in item_names_rows}
-
-    predictions = model.predict(test_df[FEATURE_COLUMNS])
-    backtest(
-        predictions,
-        test_df[TARGET_REGRESSION].to_numpy(),
-        buy_prices=test_df["avg_low_price"].to_numpy(),
-        sell_prices=test_df["avg_high_price"].to_numpy(),
-        times=test_df["time"].to_numpy(),
-        volumes=test_df["volume_total"].to_numpy(),
-        item_ids=test_df["item_id"].to_numpy(),
-        item_names=item_names,
-        trading_days=trading_days,
-    )
+    run_backtest(df, item_names, buy_limits=buy_limits, trading_days=trading_days)
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    parser = argparse.ArgumentParser(description="GEPT2.0 Engine")
-    parser.add_argument("--mode", choices=["train", "backtest", "inference"], required=True)
-    parser.add_argument("--trading-days", type=int, default=7, help="Days to simulate in backtest (default: 7)")
+    parser = argparse.ArgumentParser(description="GEPT2.0 Rule-Based Flipper")
+    parser.add_argument("--mode", choices=["scan", "backtest"], required=True)
+    parser.add_argument("--trading-days", type=int, default=7, help="Number of days to simulate (backtest mode)")
     args = parser.parse_args()
 
-    if args.mode == "train":
-        run_train()
+    if args.mode == "scan":
+        run_scan()
     elif args.mode == "backtest":
-        run_backtest(args.trading_days)
-    elif args.mode == "inference":
-        raise NotImplementedError("Inference mode not yet implemented — see Phase 2 Step 12")
+        run_backtest_mode(args.trading_days)
 
 
 if __name__ == "__main__":
